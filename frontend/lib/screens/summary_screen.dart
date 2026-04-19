@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
 
+import '../models/session_close_result.dart';
 import '../models/session_summary.dart';
 import '../services/api_service.dart';
+import '../utils/formatters.dart';
 
 class SummaryScreen extends StatefulWidget {
   const SummaryScreen({
     super.key,
     required this.apiService,
     required this.sessionId,
-    required this.onBack,
+    this.closeResult,
   });
 
   final ApiService apiService;
   final String sessionId;
-  final VoidCallback onBack;
+  final SessionCloseResult? closeResult;
 
   @override
   State<SummaryScreen> createState() => _SummaryScreenState();
@@ -39,10 +41,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Session Summary'),
-        leading: IconButton(
-          onPressed: widget.onBack,
-          icon: const Icon(Icons.arrow_back),
-        ),
         actions: [
           IconButton(
             tooltip: 'Refresh',
@@ -61,7 +59,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
           if (snapshot.hasError) {
             return Center(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -79,7 +77,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
 
           final summary = snapshot.data;
           if (summary == null) {
-            return const Center(child: Text('No summary available'));
+            return const Center(child: Text('No summary available.'));
           }
 
           return ListView(
@@ -91,33 +89,69 @@ class _SummaryScreenState extends State<SummaryScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(summary.vendorName, style: Theme.of(context).textTheme.titleLarge),
+                      Text(summary.vendorName, style: Theme.of(context).textTheme.headlineSmall),
                       const SizedBox(height: 8),
-                      Text('Session: ${summary.sessionId}'),
                       Text('Status: ${summary.status}'),
+                      if (widget.closeResult != null) ...[
+                        const SizedBox(height: 8),
+                        Text('Updated balance: ${formatCurrency(widget.closeResult!.vendorBalance)}'),
+                      ],
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 16),
-              _MetricTile(label: 'Total issued', value: summary.totalIssued.toString()),
-              _MetricTile(label: 'Total returned', value: summary.totalReturned.toString()),
-              _MetricTile(label: 'Sold', value: summary.totalSold.toString()),
-              _MetricTile(label: 'Bill', value: summary.totalBill.toStringAsFixed(2)),
+              GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 1.7,
+                children: [
+                  _SummaryCard(label: 'Total issued', value: '${summary.totalIssued}'),
+                  _SummaryCard(label: 'Total returned', value: '${summary.totalReturned}'),
+                  _SummaryCard(label: 'Total sold', value: '${summary.totalSold}'),
+                  _SummaryCard(label: 'Total bill', value: formatCurrency(summary.totalBill)),
+                ],
+              ),
               const SizedBox(height: 16),
-              Text('Plant breakdown', style: Theme.of(context).textTheme.titleMedium),
+              Text('Plant Summary', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
-              ...summary.plants.map(
-                (plant) => Card(
-                  child: ListTile(
-                    title: Text(plant.name),
-                    subtitle: Text(
-                      'Issued: ${plant.issued}  Returned: ${plant.returned}  Sold: ${plant.sold}',
+              if (summary.plants.isEmpty)
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No plant activity recorded yet.'),
+                  ),
+                )
+              else
+                ...summary.plants.map(
+                  (plant) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(plant.name, style: Theme.of(context).textTheme.titleMedium),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(child: _PlantMetric(label: 'Issued', value: '${plant.issued}')),
+                                Expanded(child: _PlantMetric(label: 'Returned', value: '${plant.returned}')),
+                                Expanded(child: _PlantMetric(label: 'Sold', value: '${plant.sold}')),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text('Bill: ${formatCurrency(plant.total)}'),
+                          ],
+                        ),
+                      ),
                     ),
-                    trailing: Text(plant.total.toStringAsFixed(2)),
                   ),
                 ),
-              ),
             ],
           );
         },
@@ -126,8 +160,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
   }
 }
 
-class _MetricTile extends StatelessWidget {
-  const _MetricTile({
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({
     required this.label,
     required this.value,
   });
@@ -138,13 +172,40 @@ class _MetricTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: ListTile(
-        title: Text(label),
-        trailing: Text(
-          value,
-          style: Theme.of(context).textTheme.titleMedium,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(label),
+            const SizedBox(height: 8),
+            Text(value, style: Theme.of(context).textTheme.titleLarge),
+          ],
         ),
       ),
+    );
+  }
+}
+
+class _PlantMetric extends StatelessWidget {
+  const _PlantMetric({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label),
+        const SizedBox(height: 4),
+        Text(value, style: Theme.of(context).textTheme.titleMedium),
+      ],
     );
   }
 }

@@ -1,22 +1,24 @@
 import 'package:flutter/material.dart';
 
-import '../models/session_info.dart';
+import '../models/app_user.dart';
 import '../models/vendor.dart';
 import '../services/api_service.dart';
+import '../utils/formatters.dart';
+import 'plant_management_screen.dart';
+import 'session_screen.dart';
+import 'vendor_detail_screen.dart';
 
 class VendorListScreen extends StatefulWidget {
   const VendorListScreen({
     super.key,
     required this.apiService,
-    required this.onSessionStarted,
+    required this.currentUser,
     required this.onLogout,
-    required this.userName,
   });
 
   final ApiService apiService;
-  final void Function(Vendor vendor, SessionInfo session) onSessionStarted;
+  final AppUser currentUser;
   final VoidCallback onLogout;
-  final String userName;
 
   @override
   State<VendorListScreen> createState() => _VendorListScreenState();
@@ -25,7 +27,6 @@ class VendorListScreen extends StatefulWidget {
 class _VendorListScreenState extends State<VendorListScreen> {
   late Future<List<Vendor>> _vendorsFuture;
   String? _startingVendorId;
-  String? _error;
 
   @override
   void initState() {
@@ -35,7 +36,6 @@ class _VendorListScreenState extends State<VendorListScreen> {
 
   void _reload() {
     setState(() {
-      _error = null;
       _vendorsFuture = widget.apiService.getVendors();
     });
   }
@@ -43,16 +43,30 @@ class _VendorListScreenState extends State<VendorListScreen> {
   Future<void> _startSession(Vendor vendor) async {
     setState(() {
       _startingVendorId = vendor.id;
-      _error = null;
     });
 
     try {
       final session = await widget.apiService.startSession(vendor.id);
-      widget.onSessionStarted(vendor, session);
+      if (!mounted) {
+        return;
+      }
+
+      await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => SessionScreen(
+            apiService: widget.apiService,
+            vendor: vendor,
+            session: session,
+          ),
+        ),
+      );
+      _reload();
     } catch (error) {
-      setState(() {
-        _error = error is ApiException ? error.message : 'Unable to start session';
-      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -62,12 +76,39 @@ class _VendorListScreenState extends State<VendorListScreen> {
     }
   }
 
+  Future<void> _openVendorDetail(Vendor vendor) async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => VendorDetailScreen(
+          apiService: widget.apiService,
+          vendor: vendor,
+        ),
+      ),
+    );
+
+    _reload();
+  }
+
+  Future<void> _openPlantManagement() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PlantManagementScreen(apiService: widget.apiService),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Vendors'),
         actions: [
+          if (widget.currentUser.isAdmin)
+            IconButton(
+              tooltip: 'Plant Management',
+              onPressed: _openPlantManagement,
+              icon: const Icon(Icons.local_florist),
+            ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: _reload,
@@ -80,78 +121,124 @@ class _VendorListScreenState extends State<VendorListScreen> {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Signed in as ${widget.userName}',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 12),
-            if (_error != null) ...[
-              Text(
-                _error!,
-                style: const TextStyle(color: Colors.red),
-              ),
-              const SizedBox(height: 12),
-            ],
-            Expanded(
-              child: FutureBuilder<List<Vendor>>(
-                future: _vendorsFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+      body: FutureBuilder<List<Vendor>>(
+        future: _vendorsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-                  if (snapshot.hasError) {
-                    return Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(snapshot.error.toString()),
-                          const SizedBox(height: 12),
-                          FilledButton(
-                            onPressed: _reload,
-                            child: const Text('Retry'),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
+          if (snapshot.hasError) {
+            return _StateMessage(
+              message: snapshot.error.toString(),
+              actionLabel: 'Retry',
+              onAction: _reload,
+            );
+          }
 
-                  final vendors = snapshot.data ?? const <Vendor>[];
-                  if (vendors.isEmpty) {
-                    return const Center(child: Text('No vendors found'));
-                  }
+          final vendors = snapshot.data ?? const <Vendor>[];
+          if (vendors.isEmpty) {
+            return const _StateMessage(message: 'No vendors available.');
+          }
 
-                  return ListView.separated(
-                    itemCount: vendors.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final vendor = vendors[index];
-                      return Card(
-                        child: ListTile(
-                          title: Text(vendor.name),
-                          subtitle: Text('Balance: ${vendor.balance.toStringAsFixed(2)}'),
-                          trailing: FilledButton(
-                            onPressed: _startingVendorId == vendor.id
-                                ? null
-                                : () => _startSession(vendor),
-                            child: Text(
-                              _startingVendorId == vendor.id
-                                  ? 'Starting...'
-                                  : 'Start Session',
-                            ),
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: vendors.length + 1,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Hello, ${widget.currentUser.name}',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 4),
+                        Text('Tap a vendor for details or start a session right away.'),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              final vendor = vendors[index - 1];
+              return Card(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => _openVendorDetail(vendor),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        const CircleAvatar(
+                          child: Icon(Icons.storefront_outlined),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(vendor.name, style: Theme.of(context).textTheme.titleMedium),
+                              const SizedBox(height: 4),
+                              Text(vendor.phone),
+                              const SizedBox(height: 4),
+                              Text('Balance: ${formatCurrency(vendor.balance)}'),
+                            ],
                           ),
                         ),
-                      );
-                    },
-                  );
-                },
+                        const SizedBox(width: 12),
+                        FilledButton(
+                          onPressed: _startingVendorId == vendor.id
+                              ? null
+                              : () => _startSession(vendor),
+                          child: Text(
+                            _startingVendorId == vendor.id ? 'Starting...' : 'Start',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _StateMessage extends StatelessWidget {
+  const _StateMessage({
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(message, textAlign: TextAlign.center),
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: onAction,
+                child: Text(actionLabel!),
               ),
-            ),
+            ],
           ],
         ),
       ),

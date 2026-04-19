@@ -1,23 +1,13 @@
 import 'package:flutter/material.dart';
 
+import 'models/app_user.dart';
 import 'models/auth_response.dart';
-import 'models/session_info.dart';
-import 'models/vendor.dart';
 import 'screens/login_screen.dart';
-import 'screens/session_screen.dart';
-import 'screens/summary_screen.dart';
 import 'screens/vendor_list_screen.dart';
 import 'services/api_service.dart';
 
 void main() {
   runApp(const NurseryApp());
-}
-
-enum AppScreen {
-  login,
-  vendors,
-  session,
-  summary,
 }
 
 class NurseryApp extends StatefulWidget {
@@ -28,101 +18,97 @@ class NurseryApp extends StatefulWidget {
 }
 
 class _NurseryAppState extends State<NurseryApp> {
-  final ApiService _apiService = ApiService();
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  late final ApiService _apiService;
+  AppUser? _currentUser;
 
-  AppScreen _screen = AppScreen.login;
-  AuthResponse? _auth;
-  Vendor? _selectedVendor;
-  SessionInfo? _activeSession;
+  @override
+  void initState() {
+    super.initState();
+    _apiService = ApiService();
+    _apiService.onUnauthorized = _handleUnauthorized;
+  }
 
   void _handleLogin(AuthResponse auth) {
     _apiService.token = auth.accessToken;
     setState(() {
-      _auth = auth;
-      _screen = AppScreen.vendors;
+      _currentUser = auth.user;
     });
+
+    _navigatorKey.currentState?.pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => VendorListScreen(
+          apiService: _apiService,
+          currentUser: auth.user,
+          onLogout: () => _logout(),
+        ),
+      ),
+    );
   }
 
-  void _logout() {
+  void _handleUnauthorized() {
+    _logout(showMessage: true);
+  }
+
+  void _logout({bool showMessage = false}) {
     _apiService.token = null;
     setState(() {
-      _auth = null;
-      _selectedVendor = null;
-      _activeSession = null;
-      _screen = AppScreen.login;
+      _currentUser = null;
     });
-  }
 
-  void _openVendorSession(Vendor vendor, SessionInfo session) {
-    setState(() {
-      _selectedVendor = vendor;
-      _activeSession = session;
-      _screen = AppScreen.session;
-    });
-  }
+    _navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        builder: (_) => LoginScreen(
+          apiService: _apiService,
+          onLoginSuccess: _handleLogin,
+        ),
+      ),
+      (route) => false,
+    );
 
-  void _openSummary(String sessionId) {
-    setState(() {
-      _activeSession = SessionInfo(
-        id: sessionId,
-        vendorId: _selectedVendor?.id ?? '',
-        status: _activeSession?.status ?? 'ACTIVE',
-      );
-      _screen = AppScreen.summary;
-    });
-  }
-
-  void _backToVendors() {
-    setState(() {
-      _activeSession = null;
-      _screen = AppScreen.vendors;
-    });
-  }
-
-  void _backToSession() {
-    setState(() {
-      _screen = AppScreen.session;
-    });
+    if (showMessage) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final context = _navigatorKey.currentContext;
+        if (context != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Your session expired. Please sign in again.'),
+            ),
+          );
+        }
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final home = switch (_screen) {
-      AppScreen.login => LoginScreen(
-          apiService: _apiService,
-          onLoginSuccess: _handleLogin,
-        ),
-      AppScreen.vendors => VendorListScreen(
-          apiService: _apiService,
-          userName: _auth?.user.name ?? '',
-          onSessionStarted: _openVendorSession,
-          onLogout: _logout,
-        ),
-      AppScreen.session => SessionScreen(
-          apiService: _apiService,
-          vendor: _selectedVendor!,
-          initialSession: _activeSession,
-          onViewSummary: _openSummary,
-          onBack: _backToVendors,
-        ),
-      AppScreen.summary => SummaryScreen(
-          apiService: _apiService,
-          sessionId: _activeSession!.id,
-          onBack: _backToSession,
-        ),
-    };
-
     return MaterialApp(
-      title: 'Nursery Frontend',
+      navigatorKey: _navigatorKey,
+      title: 'Nursery System',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
+        scaffoldBackgroundColor: const Color(0xFFF6F7F3),
         useMaterial3: true,
+        cardTheme: const CardTheme(
+          margin: EdgeInsets.zero,
+          elevation: 0,
+        ),
         inputDecorationTheme: const InputDecorationTheme(
+          border: OutlineInputBorder(),
           filled: true,
         ),
       ),
-      home: home,
+      home: _currentUser == null
+          ? LoginScreen(
+              apiService: _apiService,
+              onLoginSuccess: _handleLogin,
+            )
+          : VendorListScreen(
+              apiService: _apiService,
+              currentUser: _currentUser!,
+              onLogout: () => _logout(),
+            ),
     );
   }
 }

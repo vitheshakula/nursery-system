@@ -18,11 +18,10 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final TextEditingController _emailController = TextEditingController(text: 'admin@company.com');
+  final TextEditingController _passwordController = TextEditingController(text: 'password');
   bool _isLoading = false;
-  String? _error;
 
   @override
   void dispose() {
@@ -38,19 +37,24 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() {
       _isLoading = true;
-      _error = null;
     });
 
     try {
-      final response = await widget.apiService.login(
+      final auth = await widget.apiService.login(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
-      widget.onLoginSuccess(response);
+      if (!mounted) {
+        return;
+      }
+      widget.onLoginSuccess(auth);
     } catch (error) {
-      setState(() {
-        _error = error is ApiException ? error.message : 'Login failed. Please try again.';
-      });
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -63,73 +67,61 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Nursery Login',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Connect to the NestJS backend and keep the JWT in memory.',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 24),
-                      TextFormField(
-                        controller: _emailController,
-                        decoration: const InputDecoration(
-                          labelText: 'Email',
-                          border: OutlineInputBorder(),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Nursery Staff Login',
+                          style: Theme.of(context).textTheme.headlineSmall,
                         ),
-                        keyboardType: TextInputType.emailAddress,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Enter your email';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _passwordController,
-                        decoration: const InputDecoration(
-                          labelText: 'Password',
-                          border: OutlineInputBorder(),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Sign in to manage vendors, sessions, and payments quickly.',
+                          style: Theme.of(context).textTheme.bodyMedium,
                         ),
-                        obscureText: true,
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Enter your password';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      if (_error != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Text(
-                            _error!,
-                            style: const TextStyle(color: Colors.red),
-                          ),
+                        const SizedBox(height: 24),
+                        TextFormField(
+                          controller: _emailController,
+                          decoration: const InputDecoration(labelText: 'Email'),
+                          keyboardType: TextInputType.emailAddress,
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Enter your email.';
+                            }
+                            return null;
+                          },
                         ),
-                      FilledButton(
-                        onPressed: _isLoading ? null : _submit,
-                        child: Text(_isLoading ? 'Signing in...' : 'Login'),
-                      ),
-                    ],
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _passwordController,
+                          decoration: const InputDecoration(labelText: 'Password'),
+                          obscureText: true,
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Enter your password.';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 24),
+                        FilledButton(
+                          onPressed: _isLoading ? null : _submit,
+                          child: Text(_isLoading ? 'Signing in...' : 'Login'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

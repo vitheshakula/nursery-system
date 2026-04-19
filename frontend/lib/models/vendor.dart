@@ -11,6 +11,20 @@ class Vendor {
   final String phone;
   final double balance;
 
+  Vendor copyWith({
+    String? id,
+    String? name,
+    String? phone,
+    double? balance,
+  }) {
+    return Vendor(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      phone: phone ?? this.phone,
+      balance: balance ?? this.balance,
+    );
+  }
+
   factory Vendor.fromJson(Map<String, dynamic> json) {
     return Vendor(
       id: json['id'] as String? ?? '',

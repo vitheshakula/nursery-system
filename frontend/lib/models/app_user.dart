@@ -11,6 +11,8 @@ class AppUser {
   final String email;
   final String role;
 
+  bool get isAdmin => role.toUpperCase() == 'ADMIN';
+
   factory AppUser.fromJson(Map<String, dynamic> json) {
     return AppUser(
       id: json['id'] as String? ?? '',
