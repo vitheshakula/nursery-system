@@ -7,26 +7,29 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 
 @Controller('analytics')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
   @Get('monthly-sales')
+  @Roles(Role.ADMIN)
   async getMonthlySales() {
     return this.analyticsService.getMonthlySales();
   }
 
   @Get('dashboard')
+  @Roles(Role.ADMIN, Role.STAFF)
   async getDashboard() {
     return this.analyticsService.getDashboardSummary();
   }
 
   @Get('top-plants')
+  @Roles(Role.ADMIN)
   async getTopPlants() {
     return this.analyticsService.getTopPlants();
   }
 
   @Get('vendors')
+  @Roles(Role.ADMIN)
   async getVendorPerformance() {
     return this.analyticsService.getVendorPerformance();
   }

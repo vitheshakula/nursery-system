@@ -17,14 +17,14 @@ export class VendorController {
     return this.vendorService.findAll();
   }
 
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.vendorService.findOne(id);
-  }
-
   @Get(':id/sessions')
   async getSessions(@Param('id') id: string) {
     return this.vendorService.getSessionHistory(id);
+  }
+
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
+    return this.vendorService.findOne(id);
   }
 
   @Put(':id')

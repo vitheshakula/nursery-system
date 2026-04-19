@@ -68,7 +68,8 @@ class _ShivRajNurseryAppState extends State<ShivRajNurseryApp> {
         final context = _navigatorKey.currentContext;
         if (context != null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Session expired. Please login again.')),
+            const SnackBar(
+                content: Text('Session expired. Please login again.')),
           );
         }
       });
@@ -98,11 +99,13 @@ class _ShivRajNurseryAppState extends State<ShivRajNurseryApp> {
           titleLarge: TextStyle(fontWeight: FontWeight.w700),
           titleMedium: TextStyle(fontWeight: FontWeight.w600),
         ),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           color: Colors.white,
           elevation: 3,
           shadowColor: const Color(0x14000000),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           margin: EdgeInsets.zero,
         ),
         appBarTheme: AppBarTheme(
@@ -119,7 +122,8 @@ class _ShivRajNurseryAppState extends State<ShivRajNurseryApp> {
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
             borderSide: BorderSide.none,
@@ -138,14 +142,17 @@ class _ShivRajNurseryAppState extends State<ShivRajNurseryApp> {
             backgroundColor: const Color(0xFF2E6B3D),
             foregroundColor: Colors.white,
             minimumSize: const Size.fromHeight(52),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            textStyle:
+                const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
         ),
         outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
             minimumSize: const Size.fromHeight(52),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             side: const BorderSide(color: Color(0xFF2E6B3D)),
             foregroundColor: const Color(0xFF2E6B3D),
           ),
@@ -154,7 +161,8 @@ class _ShivRajNurseryAppState extends State<ShivRajNurseryApp> {
           backgroundColor: Colors.white,
           selectedColor: const Color(0xFFDDECCF),
           side: BorderSide.none,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           labelStyle: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),

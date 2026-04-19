@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../models/payment.dart';
-import '../models/session_info.dart';
 import '../models/vendor.dart';
 import '../models/vendor_session.dart';
 import '../services/api_service.dart';

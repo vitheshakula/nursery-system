@@ -281,7 +281,12 @@ class ApiService {
     }
 
     throw ApiException(
-      _messageFor(path: path, statusCode: response.statusCode, serverError: payload['error'] as String?),
+      _messageFor(
+        method: method,
+        path: path,
+        statusCode: response.statusCode,
+        serverError: payload['error'] as String?,
+      ),
       statusCode: response.statusCode,
     );
   }
@@ -304,6 +309,7 @@ class ApiService {
   }
 
   String _messageFor({
+    required String method,
     required String path,
     required int statusCode,
     String? serverError,
@@ -325,13 +331,13 @@ class ApiService {
       return 'This vendor already has history and cannot be deleted.';
     }
     if (path.contains('/vendors')) {
-      return 'Could not save vendor details.';
+      return method == 'GET' ? 'Could not load vendors right now.' : 'Could not save vendor details.';
     }
     if (path.contains('/categories')) {
-      return 'Could not save category right now.';
+      return method == 'GET' ? 'Could not load categories right now.' : 'Could not save category right now.';
     }
     if (path.contains('/plants')) {
-      return path.contains('?') ? 'Could not load items right now.' : 'Could not save item right now.';
+      return method == 'GET' ? 'Could not load items right now.' : 'Could not save item right now.';
     }
     if (path.contains('/sessions/start')) {
       return 'Could not start session.';

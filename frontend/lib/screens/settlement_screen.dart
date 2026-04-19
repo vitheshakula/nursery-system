@@ -41,8 +41,10 @@ class _SettlementScreenState extends State<SettlementScreen> {
   double get _cashPaid => double.tryParse(_cashController.text.trim()) ?? 0;
   double get _onlinePaid => double.tryParse(_onlineController.text.trim()) ?? 0;
   double get _totalPaid => _cashPaid + _onlinePaid;
-  double get _remainingCredit => (widget.totalBill - _totalPaid).clamp(0, double.infinity);
-  double get _updatedOutstanding => (widget.newBalance - _totalPaid).clamp(0, double.infinity);
+  double get _remainingCredit =>
+      (widget.totalBill - _totalPaid).clamp(0, double.infinity).toDouble();
+  double get _updatedOutstanding =>
+      (widget.newBalance - _totalPaid).clamp(0, double.infinity).toDouble();
 
   Future<void> _submitSettlement() async {
     if (_cashPaid < 0 || _onlinePaid < 0) {
@@ -50,8 +52,8 @@ class _SettlementScreenState extends State<SettlementScreen> {
       return;
     }
 
-    if (_totalPaid <= 0) {
-      _showMessage('Enter cash or online amount.');
+    if (_totalPaid > widget.newBalance) {
+      _showMessage('Payment is more than the outstanding balance.');
       return;
     }
 
@@ -83,7 +85,13 @@ class _SettlementScreenState extends State<SettlementScreen> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Settlement saved successfully.')),
+        SnackBar(
+          content: Text(
+            _totalPaid > 0
+                ? 'Settlement saved successfully.'
+                : 'Session closed with remaining credit.',
+          ),
+        ),
       );
       Navigator.of(context).pop(true);
     } catch (error) {
