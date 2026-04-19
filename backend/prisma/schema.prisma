@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role
+  createdAt DateTime @default(now())
+}
+
+model Vendor {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String
+  balance   Float    @default(0)
+  createdAt DateTime @default(now())
+
+  sessions  Session[]
+  payments  Payment[]
+}
+
+model Category {
+  id     String  @id @default(uuid())
+  name   String  @unique
+
+  plants Plant[]
+}
+
+model Plant {
+  id           String   @id @default(uuid())
+  name         String
+  categoryId   String
+  vendorPrice  Float
+  retailPrice  Float?
+  createdAt    DateTime @default(now())
+
+  category Category @relation(fields: [categoryId], references: [id])
+
+  issueItems  IssueItem[]
+  returnItems ReturnItem[]
+}
+
+model Session {
+  id        String        @id @default(uuid())
+  vendorId  String
+  status    SessionStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  closedAt  DateTime?
+
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+
+  issueItems  IssueItem[]
+  returnItems ReturnItem[]
+  payments    Payment[]
+}
+
+model IssueItem {
+  id        String   @id @default(uuid())
+  sessionId String
+  plantId   String
+  quantity  Int
+  createdAt DateTime @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id])
+  plant   Plant   @relation(fields: [plantId], references: [id])
+}
+
+model ReturnItem {
+  id        String   @id @default(uuid())
+  sessionId String
+  plantId   String
+  quantity  Int
+  condition PlantCondition
+  createdAt DateTime @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id])
+  plant   Plant   @relation(fields: [plantId], references: [id])
+}
+
+model Payment {
+  id        String   @id @default(uuid())
+  vendorId  String
+  sessionId String?
+  amount    Float
+  mode      PaymentMode
+  createdAt DateTime @default(now())
+
+  vendor  Vendor  @relation(fields: [vendorId], references: [id])
+  session Session? @relation(fields: [sessionId], references: [id])
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+enum SessionStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum PaymentMode {
+  CASH
+  UPI
+}
+
+enum PlantCondition {
+  GOOD
+  DAMAGED
+}
