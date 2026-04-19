@@ -16,6 +16,52 @@ type ClosedSessionInfo = {
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async getDashboardSummary() {
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+
+    const [closedToday, activeSessions, vendorsWithBalance] = await this.prisma.$transaction([
+      this.prisma.session.findMany({
+        where: {
+          status: 'CLOSED',
+          closedAt: {
+            gte: startOfDay,
+            lt: endOfDay,
+          },
+        },
+        select: {
+          id: true,
+        },
+      }),
+      this.prisma.session.count({
+        where: {
+          status: 'ACTIVE',
+        },
+      }),
+      this.prisma.vendor.count({
+        where: {
+          balance: {
+            gt: 0,
+          },
+        },
+      }),
+    ]);
+
+    let totalSales = 0;
+    for (const session of closedToday) {
+      const summary = await this.buildClosedSessionSummary(session.id);
+      totalSales += summary.totalBill;
+    }
+
+    return {
+      totalSales,
+      activeSessions,
+      vendorsWithBalance,
+      date: startOfDay,
+    };
+  }
+
   async getMonthlySales() {
     const analytics = await this.buildClosedSessionAnalytics();
     const revenueByMonth = new Map<string, number>();
@@ -198,6 +244,46 @@ export class AnalyticsService {
       revenueByPlant,
       revenueBySession,
     };
+  }
+
+  private async buildClosedSessionSummary(sessionId: string) {
+    const [issueItems, returnItems] = await this.prisma.$transaction([
+      this.prisma.issueItem.findMany({
+        where: { sessionId },
+        include: { plant: true },
+      }),
+      this.prisma.returnItem.findMany({
+        where: { sessionId },
+        include: { plant: true },
+      }),
+    ]);
+
+    const issuedByPlant = issueItems.reduce<Record<string, { quantity: number; vendorPrice: number }>>(
+      (acc, item) => {
+        const current = acc[item.plantId] ?? {
+          quantity: 0,
+          vendorPrice: item.plant.vendorPrice,
+        };
+        current.quantity += item.quantity;
+        acc[item.plantId] = current;
+        return acc;
+      },
+      {},
+    );
+
+    const returnedByPlant = returnItems.reduce<Record<string, number>>((acc, item) => {
+      acc[item.plantId] = (acc[item.plantId] ?? 0) + item.quantity;
+      return acc;
+    }, {});
+
+    const totalBill = Object.entries(issuedByPlant).reduce((sum, entry) => {
+      const plantId = entry[0];
+      const issued = entry[1];
+      const sold = Math.max(issued.quantity - (returnedByPlant[plantId] ?? 0), 0);
+      return sum + sold * issued.vendorPrice;
+    }, 0);
+
+    return { totalBill };
   }
 
   private buildSessionPlantKey(sessionId: string, plantId: string) {

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
-import '../models/plant.dart';
+import '../models/category.dart';
+import '../models/item.dart';
 import '../models/session_info.dart';
 import '../models/vendor.dart';
 import '../services/api_service.dart';
 import '../utils/formatters.dart';
+import 'settlement_screen.dart';
 import 'summary_screen.dart';
 
 enum SessionMode {
@@ -29,54 +31,92 @@ class SessionScreen extends StatefulWidget {
 }
 
 class _SessionScreenState extends State<SessionScreen> {
-  late Future<List<Plant>> _plantsFuture;
+  final TextEditingController _searchController = TextEditingController();
   final Map<String, int> _quantities = <String, int>{};
+  List<Item> _items = const <Item>[];
+  List<Category> _categories = const <Category>[];
+  String _selectedCategoryId = 'all';
   SessionMode _mode = SessionMode.issue;
+  bool _isLoading = true;
   bool _isSubmitting = false;
   bool _isClosing = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _plantsFuture = widget.apiService.getPlants();
+    _loadData();
   }
 
-  int get _totalQuantity =>
-      _quantities.values.fold<int>(0, (sum, quantity) => sum + quantity);
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
-  void _reloadPlants() {
+  Future<void> _loadData() async {
     setState(() {
-      _plantsFuture = widget.apiService.getPlants();
+      _isLoading = true;
+      _error = null;
     });
+
+    try {
+      final results = await Future.wait([
+        widget.apiService.getItems(),
+        widget.apiService.getCategories(),
+      ]);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _items = results[0] as List<Item>;
+        _categories = results[1] as List<Category>;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
-  void _updateQuantity(Plant plant, int change) {
-    final current = _quantities[plant.id] ?? 0;
-    final next = current + change;
-
+  void _changeQuantity(Item item, int delta) {
+    final current = _quantities[item.id] ?? 0;
+    final next = current + delta;
     setState(() {
       if (next <= 0) {
-        _quantities.remove(plant.id);
+        _quantities.remove(item.id);
       } else {
-        _quantities[plant.id] = next;
+        _quantities[item.id] = next;
       }
     });
   }
 
-  double _estimatedBill(List<Plant> plants) {
-    return plants.fold<double>(0, (sum, plant) {
-      final quantity = _quantities[plant.id] ?? 0;
-      return sum + (quantity * plant.vendorPrice);
+  int get _totalQuantity => _quantities.values.fold<int>(0, (sum, quantity) => sum + quantity);
+
+  double get _estimatedBill {
+    return _items.fold<double>(0, (sum, item) {
+      return sum + ((_quantities[item.id] ?? 0) * item.vendorPrice);
     });
   }
 
-  Future<void> _submitSelection() async {
-    final selectedItems = Map<String, int>.fromEntries(
+  Future<void> _submit() async {
+    final selected = Map<String, int>.fromEntries(
       _quantities.entries.where((entry) => entry.value > 0),
     );
 
-    if (selectedItems.isEmpty) {
-      _showMessage('Select at least one plant first.');
+    if (selected.isEmpty) {
+      _showMessage('Select items first.');
       return;
     }
 
@@ -88,12 +128,12 @@ class _SessionScreenState extends State<SessionScreen> {
       if (_mode == SessionMode.issue) {
         await widget.apiService.submitIssueItems(
           sessionId: widget.session.id,
-          quantities: selectedItems,
+          quantities: selected,
         );
       } else {
         await widget.apiService.submitReturnItems(
           sessionId: widget.session.id,
-          quantities: selectedItems,
+          quantities: selected,
         );
       }
 
@@ -104,11 +144,7 @@ class _SessionScreenState extends State<SessionScreen> {
       setState(() {
         _quantities.clear();
       });
-      _showMessage(
-        _mode == SessionMode.issue
-            ? 'Issue saved successfully.'
-            : 'Return saved successfully.',
-      );
+      _showMessage(_mode == SessionMode.issue ? 'Issued items saved.' : 'Returned items saved.');
     } catch (error) {
       _showMessage(error.toString());
     } finally {
@@ -120,8 +156,8 @@ class _SessionScreenState extends State<SessionScreen> {
     }
   }
 
-  Future<void> _openSummary() async {
-    await Navigator.of(context).push<void>(
+  Future<void> _viewSummary() async {
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => SummaryScreen(
           apiService: widget.apiService,
@@ -134,9 +170,9 @@ class _SessionScreenState extends State<SessionScreen> {
   Future<void> _closeSession() async {
     final confirmed = await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
+          builder: (_) => AlertDialog(
             title: const Text('Close Session'),
-            content: const Text('Close this session and move to the final summary?'),
+            content: const Text('Move to settlement for this vendor?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
@@ -144,7 +180,7 @@ class _SessionScreenState extends State<SessionScreen> {
               ),
               FilledButton(
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Close'),
+                child: const Text('Continue'),
               ),
             ],
           ),
@@ -160,21 +196,20 @@ class _SessionScreenState extends State<SessionScreen> {
     });
 
     try {
-      final result = await widget.apiService.closeSession(widget.session.id);
+      final closeResult = await widget.apiService.closeSession(widget.session.id);
       if (!mounted) {
         return;
       }
 
-      _showMessage(
-        'Session closed. Bill: ${formatCurrency(result.totalBill)}',
-      );
-
-      await Navigator.of(context).push<void>(
+      final settled = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
-          builder: (_) => SummaryScreen(
+          builder: (_) => SettlementScreen(
             apiService: widget.apiService,
+            vendor: widget.vendor,
             sessionId: widget.session.id,
-            closeResult: result,
+            totalBill: closeResult.totalBill,
+            previousBalance: widget.vendor.balance,
+            newBalance: closeResult.vendorBalance,
           ),
         ),
       );
@@ -182,7 +217,10 @@ class _SessionScreenState extends State<SessionScreen> {
       if (!mounted) {
         return;
       }
-      Navigator.of(context).pop(true);
+
+      if (settled == true) {
+        Navigator.of(context).pop(true);
+      }
     } catch (error) {
       _showMessage(error.toString());
     } finally {
@@ -202,133 +240,200 @@ class _SessionScreenState extends State<SessionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final query = _searchController.text.trim().toLowerCase();
+    final filteredItems = _items.where((item) {
+      final categoryMatch = _selectedCategoryId == 'all' || item.categoryId == _selectedCategoryId;
+      final searchMatch = query.isEmpty || item.name.toLowerCase().contains(query);
+      return categoryMatch && searchMatch;
+    }).toList();
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.vendor.name),
+        actions: [
+          IconButton(
+            onPressed: _loadData,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
       ),
-      body: FutureBuilder<List<Plant>>(
-        future: _plantsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return _SessionMessageState(
-              message: snapshot.error.toString(),
-              actionLabel: 'Retry',
-              onAction: _reloadPlants,
-            );
-          }
-
-          final plants = snapshot.data ?? const <Plant>[];
-          if (plants.isEmpty) {
-            return const _SessionMessageState(message: 'No plants available.');
-          }
-
-          final estimatedBill = _estimatedBill(plants);
-
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Session is active for ${widget.vendor.name}.',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 12),
-                        SegmentedButton<SessionMode>(
-                          segments: const [
-                            ButtonSegment(
-                              value: SessionMode.issue,
-                              label: Text('Issue'),
-                              icon: Icon(Icons.outbox_outlined),
-                            ),
-                            ButtonSegment(
-                              value: SessionMode.returnItems,
-                              label: Text('Return'),
-                              icon: Icon(Icons.assignment_return_outlined),
-                            ),
-                          ],
-                          selected: <SessionMode>{_mode},
-                          onSelectionChanged: (selection) {
-                            setState(() {
-                              _mode = selection.first;
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        FilledButton(
-                          onPressed: _isSubmitting ? null : _submitSelection,
-                          child: Text(
-                            _isSubmitting
-                                ? 'Saving...'
-                                : _mode == SessionMode.issue
-                                    ? 'Submit Issue'
-                                    : 'Submit Return',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  itemCount: plants.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final plant = plants[index];
-                    final quantity = _quantities[plant.id] ?? 0;
-
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            const CircleAvatar(child: Icon(Icons.local_florist)),
-                            const SizedBox(width: 12),
-                            Expanded(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(child: Text(_error!))
+              : Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                      child: Column(
+                        children: [
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(plant.name, style: Theme.of(context).textTheme.titleMedium),
-                                  const SizedBox(height: 4),
-                                  Text('Price: ${formatCurrency(plant.vendorPrice)}'),
+                                  Text(
+                                    'Session active for ${widget.vendor.name}',
+                                    style: Theme.of(context).textTheme.titleLarge,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  SegmentedButton<SessionMode>(
+                                    segments: const [
+                                      ButtonSegment(
+                                        value: SessionMode.issue,
+                                        label: Text('Issue'),
+                                        icon: Icon(Icons.outbox_outlined),
+                                      ),
+                                      ButtonSegment(
+                                        value: SessionMode.returnItems,
+                                        label: Text('Return'),
+                                        icon: Icon(Icons.assignment_return_outlined),
+                                      ),
+                                    ],
+                                    selected: <SessionMode>{_mode},
+                                    onSelectionChanged: (selection) {
+                                      setState(() {
+                                        _mode = selection.first;
+                                      });
+                                    },
+                                  ),
+                                  const SizedBox(height: 12),
+                                  TextField(
+                                    controller: _searchController,
+                                    onChanged: (_) => setState(() {}),
+                                    decoration: const InputDecoration(
+                                      prefixIcon: Icon(Icons.search),
+                                      hintText: 'Search items',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  SizedBox(
+                                    height: 42,
+                                    child: ListView(
+                                      scrollDirection: Axis.horizontal,
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.only(right: 8),
+                                          child: ChoiceChip(
+                                            label: const Text('All'),
+                                            selected: _selectedCategoryId == 'all',
+                                            onSelected: (_) {
+                                              setState(() {
+                                                _selectedCategoryId = 'all';
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                        ..._categories.map(
+                                          (category) => Padding(
+                                            padding: const EdgeInsets.only(right: 8),
+                                            child: ChoiceChip(
+                                              label: Text(category.name),
+                                              selected: _selectedCategoryId == category.id,
+                                              onSelected: (_) {
+                                                setState(() {
+                                                  _selectedCategoryId = category.id;
+                                                });
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            _QuantityStepper(
-                              quantity: quantity,
-                              onAdd: () => _updateQuantity(plant, 1),
-                              onRemove: quantity == 0 ? null : () => _updateQuantity(plant, -1),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    );
-                  },
+                    ),
+                    Expanded(
+                      child: filteredItems.isEmpty
+                          ? const Center(child: Text('No items available.'))
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                              itemCount: filteredItems.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 12),
+                              itemBuilder: (context, index) {
+                                final item = filteredItems[index];
+                                final quantity = _quantities[item.id] ?? 0;
+                                final selected = quantity > 0;
+                                final categoryName = _categories
+                                    .firstWhere(
+                                      (category) => category.id == item.categoryId,
+                                      orElse: () => const Category(id: '', name: 'Others'),
+                                    )
+                                    .name;
+
+                                return AnimatedContainer(
+                                  duration: const Duration(milliseconds: 160),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(20),
+                                    boxShadow: selected
+                                        ? const [
+                                            BoxShadow(
+                                              color: Color(0x143C8F41),
+                                              blurRadius: 14,
+                                              offset: Offset(0, 8),
+                                            ),
+                                          ]
+                                        : const [],
+                                  ),
+                                  child: Card(
+                                    color: selected ? const Color(0xFFF0F7E9) : Colors.white,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            width: 50,
+                                            height: 50,
+                                            decoration: BoxDecoration(
+                                              color: selected ? const Color(0xFFD7EBC5) : const Color(0xFFEFF4EA),
+                                              borderRadius: BorderRadius.circular(14),
+                                            ),
+                                            child: const Icon(Icons.inventory_2_outlined),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(item.name, style: Theme.of(context).textTheme.titleMedium),
+                                                const SizedBox(height: 4),
+                                                Text(categoryName),
+                                                const SizedBox(height: 4),
+                                                Text('Vendor ${formatCurrency(item.vendorPrice)}'),
+                                              ],
+                                            ),
+                                          ),
+                                          _QuantityStepper(
+                                            quantity: quantity,
+                                            onIncrement: () => _changeQuantity(item, 1),
+                                            onDecrement: quantity == 0 ? null : () => _changeQuantity(item, -1),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    _SummaryBar(
+                      totalQuantity: _totalQuantity,
+                      estimatedBill: _estimatedBill,
+                      isSubmitting: _isSubmitting,
+                      isClosing: _isClosing,
+                      submitLabel: _mode == SessionMode.issue ? 'Submit Issue' : 'Submit Return',
+                      onSubmit: _submit,
+                      onViewSummary: _viewSummary,
+                      onCloseSession: _closeSession,
+                    ),
+                  ],
                 ),
-              ),
-              _LiveSummaryBar(
-                totalQuantity: _totalQuantity,
-                estimatedBill: estimatedBill,
-                isClosing: _isClosing,
-                onViewSummary: _openSummary,
-                onCloseSession: _closeSession,
-              ),
-            ],
-          );
-        },
-      ),
     );
   }
 }
@@ -336,92 +441,110 @@ class _SessionScreenState extends State<SessionScreen> {
 class _QuantityStepper extends StatelessWidget {
   const _QuantityStepper({
     required this.quantity,
-    required this.onAdd,
-    required this.onRemove,
+    required this.onIncrement,
+    required this.onDecrement,
   });
 
   final int quantity;
-  final VoidCallback onAdd;
-  final VoidCallback? onRemove;
+  final VoidCallback onIncrement;
+  final VoidCallback? onDecrement;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton.filledTonal(
-          onPressed: onRemove,
-          icon: const Icon(Icons.remove),
-        ),
-        SizedBox(
-          width: 28,
-          child: Text(
-            '$quantity',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F7F3),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            onPressed: onDecrement,
+            icon: const Icon(Icons.remove),
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            style: IconButton.styleFrom(backgroundColor: Colors.white),
           ),
-        ),
-        IconButton.filled(
-          onPressed: onAdd,
-          icon: const Icon(Icons.add),
-        ),
-      ],
+          SizedBox(
+            width: 28,
+            child: Text(
+              '$quantity',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          IconButton(
+            onPressed: onIncrement,
+            icon: const Icon(Icons.add),
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            style: IconButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _LiveSummaryBar extends StatelessWidget {
-  const _LiveSummaryBar({
+class _SummaryBar extends StatelessWidget {
+  const _SummaryBar({
     required this.totalQuantity,
     required this.estimatedBill,
+    required this.isSubmitting,
     required this.isClosing,
+    required this.submitLabel,
+    required this.onSubmit,
     required this.onViewSummary,
     required this.onCloseSession,
   });
 
   final int totalQuantity;
   final double estimatedBill;
+  final bool isSubmitting;
   final bool isClosing;
+  final String submitLabel;
+  final VoidCallback onSubmit;
   final VoidCallback onViewSummary;
   final VoidCallback onCloseSession;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        boxShadow: const [
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
           BoxShadow(
-            blurRadius: 10,
             color: Color(0x14000000),
-            offset: Offset(0, -2),
+            blurRadius: 18,
+            offset: Offset(0, -4),
           ),
         ],
       ),
       child: SafeArea(
         top: false,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               children: [
                 Expanded(
-                  child: _SummaryMetric(
-                    label: 'Total quantity',
-                    value: '$totalQuantity',
-                  ),
+                  child: _SummaryStat(label: 'Total qty', value: '$totalQuantity'),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _SummaryMetric(
-                    label: 'Estimated bill',
-                    value: formatCurrency(estimatedBill),
-                  ),
+                  child: _SummaryStat(label: 'Estimated bill', value: formatCurrency(estimatedBill)),
                 ),
               ],
             ),
             const SizedBox(height: 12),
+            FilledButton(
+              onPressed: isSubmitting ? null : onSubmit,
+              child: Text(isSubmitting ? 'Saving...' : submitLabel),
+            ),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
@@ -446,8 +569,8 @@ class _LiveSummaryBar extends StatelessWidget {
   }
 }
 
-class _SummaryMetric extends StatelessWidget {
-  const _SummaryMetric({
+class _SummaryStat extends StatelessWidget {
+  const _SummaryStat({
     required this.label,
     required this.value,
   });
@@ -458,10 +581,10 @@ class _SummaryMetric extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFF2F6EE),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -470,40 +593,6 @@ class _SummaryMetric extends StatelessWidget {
           const SizedBox(height: 4),
           Text(value, style: Theme.of(context).textTheme.titleMedium),
         ],
-      ),
-    );
-  }
-}
-
-class _SessionMessageState extends StatelessWidget {
-  const _SessionMessageState({
-    required this.message,
-    this.actionLabel,
-    this.onAction,
-  });
-
-  final String message;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(message, textAlign: TextAlign.center),
-            if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: onAction,
-                child: Text(actionLabel!),
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }

@@ -7,7 +7,7 @@ class SessionSummary {
     required this.totalReturned,
     required this.totalSold,
     required this.totalBill,
-    required this.plants,
+    required this.items,
   });
 
   final String sessionId;
@@ -17,11 +17,11 @@ class SessionSummary {
   final int totalReturned;
   final int totalSold;
   final double totalBill;
-  final List<PlantSummary> plants;
+  final List<SessionSummaryItem> items;
 
   factory SessionSummary.fromJson(Map<String, dynamic> json) {
     final vendor = Map<String, dynamic>.from((json['vendor'] as Map?) ?? const {});
-    final rawPlants = json['plants'] as List<dynamic>? ?? const [];
+    final rawItems = json['plants'] as List<dynamic>? ?? const [];
 
     return SessionSummary(
       sessionId: json['sessionId'] as String? ?? '',
@@ -31,15 +31,15 @@ class SessionSummary {
       totalReturned: json['totalReturned'] as int? ?? 0,
       totalSold: json['totalSold'] as int? ?? 0,
       totalBill: (json['totalBill'] as num?)?.toDouble() ?? 0,
-      plants: rawPlants
-          .map((item) => PlantSummary.fromJson(Map<String, dynamic>.from(item as Map)))
+      items: rawItems
+          .map((item) => SessionSummaryItem.fromJson(Map<String, dynamic>.from(item as Map)))
           .toList(),
     );
   }
 }
 
-class PlantSummary {
-  const PlantSummary({
+class SessionSummaryItem {
+  const SessionSummaryItem({
     required this.plantId,
     required this.name,
     required this.issued,
@@ -57,8 +57,8 @@ class PlantSummary {
   final double unitPrice;
   final double total;
 
-  factory PlantSummary.fromJson(Map<String, dynamic> json) {
-    return PlantSummary(
+  factory SessionSummaryItem.fromJson(Map<String, dynamic> json) {
+    return SessionSummaryItem(
       plantId: json['plantId'] as String? ?? '',
       name: json['name'] as String? ?? '',
       issued: json['issued'] as int? ?? 0,

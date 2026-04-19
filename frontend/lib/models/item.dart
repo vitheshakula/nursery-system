@@ -1,5 +1,5 @@
-class Plant {
-  const Plant({
+class Item {
+  const Item({
     required this.id,
     required this.name,
     required this.categoryId,
@@ -13,8 +13,8 @@ class Plant {
   final double vendorPrice;
   final double? retailPrice;
 
-  factory Plant.fromJson(Map<String, dynamic> json) {
-    return Plant(
+  factory Item.fromJson(Map<String, dynamic> json) {
+    return Item(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       categoryId: json['categoryId'] as String? ?? '',

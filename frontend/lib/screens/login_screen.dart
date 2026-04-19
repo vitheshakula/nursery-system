@@ -83,12 +83,12 @@ class _LoginScreenState extends State<LoginScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Nursery Staff Login',
+                          'Shiv Raj Nursery',
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Sign in to manage vendors, sessions, and payments quickly.',
+                          'Login to manage vendors, items, sessions and settlement quickly.',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         const SizedBox(height: 24),

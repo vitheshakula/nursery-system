@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../models/payment.dart';
+import '../models/session_info.dart';
 import '../models/vendor.dart';
+import '../models/vendor_session.dart';
 import '../services/api_service.dart';
 import '../utils/formatters.dart';
-import 'payment_screen.dart';
 import 'session_screen.dart';
+import 'summary_screen.dart';
 
 class VendorDetailScreen extends StatefulWidget {
   const VendorDetailScreen({
@@ -23,39 +25,59 @@ class VendorDetailScreen extends StatefulWidget {
 
 class _VendorDetailScreenState extends State<VendorDetailScreen> {
   late Vendor _vendor;
-  late Future<List<PaymentRecord>> _paymentsFuture;
-  bool _isStartingSession = false;
+  List<VendorSession> _sessions = const <VendorSession>[];
+  List<PaymentRecord> _payments = const <PaymentRecord>[];
+  bool _isLoading = true;
+  bool _isStarting = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
     _vendor = widget.vendor;
-    _paymentsFuture = widget.apiService.getVendorPayments(widget.vendor.id);
+    _loadData();
   }
 
-  void _reloadPayments() {
+  Future<void> _loadData() async {
     setState(() {
-      _paymentsFuture = widget.apiService.getVendorPayments(_vendor.id);
+      _isLoading = true;
+      _error = null;
     });
-  }
 
-  Future<void> _refreshVendor() async {
     try {
-      final refreshed = await widget.apiService.getVendor(_vendor.id);
+      final results = await Future.wait([
+        widget.apiService.getVendor(_vendor.id),
+        widget.apiService.getVendorSessions(_vendor.id),
+        widget.apiService.getVendorPayments(_vendor.id),
+      ]);
+
       if (!mounted) {
         return;
       }
       setState(() {
-        _vendor = refreshed;
+        _vendor = results[0] as Vendor;
+        _sessions = results[1] as List<VendorSession>;
+        _payments = results[2] as List<PaymentRecord>;
       });
-    } catch (_) {
-      // Keep current vendor snapshot if refresh fails.
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   Future<void> _startSession() async {
     setState(() {
-      _isStartingSession = true;
+      _isStarting = true;
     });
 
     try {
@@ -75,41 +97,31 @@ class _VendorDetailScreenState extends State<VendorDetailScreen> {
       );
 
       if (changed == true) {
-        await _refreshVendor();
-        _reloadPayments();
+        await _loadData();
       }
     } catch (error) {
-      _showMessage(error.toString());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
-          _isStartingSession = false;
+          _isStarting = false;
         });
       }
     }
   }
 
-  Future<void> _openPayment() async {
-    final payment = await Navigator.of(context).push<PaymentRecord>(
+  Future<void> _openSessionSummary(VendorSession session) async {
+    await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => PaymentScreen(
+        builder: (_) => SummaryScreen(
           apiService: widget.apiService,
-          vendor: _vendor,
+          sessionId: session.id,
         ),
       ),
-    );
-
-    if (payment != null) {
-      setState(() {
-        _vendor = _vendor.copyWith(balance: payment.vendorBalance ?? _vendor.balance);
-      });
-      _reloadPayments();
-    }
-  }
-
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
     );
   }
 
@@ -120,116 +132,98 @@ class _VendorDetailScreenState extends State<VendorDetailScreen> {
         title: const Text('Vendor Details'),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openPayment,
-        icon: const Icon(Icons.payments_outlined),
-        label: const Text('Add Payment'),
+        onPressed: _isStarting ? null : _startSession,
+        icon: const Icon(Icons.play_arrow),
+        label: Text(_isStarting ? 'Starting...' : 'Start Session'),
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await _refreshVendor();
-          _reloadPayments();
-        },
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(_vendor.name, style: Theme.of(context).textTheme.headlineSmall),
-                    const SizedBox(height: 8),
-                    Text('Phone: ${_vendor.phone}'),
-                    const SizedBox(height: 4),
-                    Text('Balance: ${formatCurrency(_vendor.balance)}'),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: _isStartingSession ? null : _startSession,
-                      icon: const Icon(Icons.play_arrow),
-                      label: Text(_isStartingSession ? 'Starting...' : 'Start Session'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('Sessions History', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  'No sessions yet.\nSession history list is not available from the current backend API.',
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('Payments History', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            FutureBuilder<List<PaymentRecord>>(
-              future: _paymentsFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-
-                if (snapshot.hasError) {
-                  return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(snapshot.error.toString()),
-                          const SizedBox(height: 12),
-                          FilledButton(
-                            onPressed: _reloadPayments,
-                            child: const Text('Retry'),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(child: Text(_error!))
+              : RefreshIndicator(
+                  onRefresh: _loadData,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
+                    children: [
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(_vendor.name, style: Theme.of(context).textTheme.headlineSmall),
+                              const SizedBox(height: 8),
+                              Text('Phone: ${_vendor.phone}'),
+                              const SizedBox(height: 4),
+                              Text('Balance: ${formatCurrency(_vendor.balance)}'),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                    ),
-                  );
-                }
-
-                final payments = snapshot.data ?? const <PaymentRecord>[];
-                if (payments.isEmpty) {
-                  return const Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('No payments yet.'),
-                    ),
-                  );
-                }
-
-                return Column(
-                  children: payments
-                      .map(
-                        (payment) => Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Card(
-                            child: ListTile(
-                              leading: const CircleAvatar(
-                                child: Icon(Icons.payments),
-                              ),
-                              title: Text(formatCurrency(payment.amount)),
-                              subtitle: Text(
-                                '${payment.mode} - ${formatDateTime(payment.createdAt)}',
+                      const SizedBox(height: 20),
+                      Text('Sessions history', style: Theme.of(context).textTheme.titleLarge),
+                      const SizedBox(height: 12),
+                      if (_sessions.isEmpty)
+                        const _SectionEmptyState(message: 'No sessions yet.')
+                      else
+                        ..._sessions.map(
+                          (session) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Card(
+                              child: ListTile(
+                                onTap: () => _openSessionSummary(session),
+                                title: Text(
+                                  session.status == 'ACTIVE' ? 'Active session' : 'Closed session',
+                                ),
+                                subtitle: Text(
+                                  '${formatDateTime(session.createdAt)}\nSold: ${session.totalSold}  Bill: ${formatCurrency(session.totalBill)}',
+                                ),
+                                trailing: const Icon(Icons.chevron_right),
                               ),
                             ),
                           ),
                         ),
-                      )
-                      .toList(),
-                );
-              },
-            ),
-          ],
-        ),
+                      const SizedBox(height: 20),
+                      Text('Payments history', style: Theme.of(context).textTheme.titleLarge),
+                      const SizedBox(height: 12),
+                      if (_payments.isEmpty)
+                        const _SectionEmptyState(message: 'No payments yet.')
+                      else
+                        ..._payments.map(
+                          (payment) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Card(
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: const Color(0xFFDDECCF),
+                                  child: Text(payment.mode == 'UPI' ? 'U' : 'C'),
+                                ),
+                                title: Text(formatCurrency(payment.amount)),
+                                subtitle: Text('${payment.mode} - ${formatDateTime(payment.createdAt)}'),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+    );
+  }
+}
+
+class _SectionEmptyState extends StatelessWidget {
+  const _SectionEmptyState({
+    required this.message,
+  });
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(message),
       ),
     );
   }

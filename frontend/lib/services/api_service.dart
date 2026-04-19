@@ -4,12 +4,14 @@ import 'package:http/http.dart' as http;
 
 import '../models/auth_response.dart';
 import '../models/category.dart';
+import '../models/dashboard_stats.dart';
+import '../models/item.dart';
 import '../models/payment.dart';
-import '../models/plant.dart';
 import '../models/session_close_result.dart';
 import '../models/session_info.dart';
 import '../models/session_summary.dart';
 import '../models/vendor.dart';
+import '../models/vendor_session.dart';
 
 class ApiException implements Exception {
   const ApiException(this.message, {this.statusCode});
@@ -36,17 +38,15 @@ class ApiService {
   final String baseUrl;
 
   String? _token;
-  bool _hasTriggeredUnauthorized = false;
+  bool _unauthorizedHandled = false;
   void Function()? onUnauthorized;
 
   set token(String? value) {
     _token = value;
     if (value != null && value.isNotEmpty) {
-      _hasTriggeredUnauthorized = false;
+      _unauthorizedHandled = false;
     }
   }
-
-  String? get token => _token;
 
   Future<AuthResponse> login({
     required String email,
@@ -65,6 +65,11 @@ class ApiService {
     return AuthResponse.fromJson(_map(data));
   }
 
+  Future<DashboardStats> getDashboardStats() async {
+    final data = await _request(method: 'GET', path: '/analytics/dashboard');
+    return DashboardStats.fromJson(_map(data));
+  }
+
   Future<List<Vendor>> getVendors() async {
     final data = await _request(method: 'GET', path: '/vendors');
     return _list(data).map(Vendor.fromJson).toList();
@@ -75,9 +80,44 @@ class ApiService {
     return Vendor.fromJson(_map(data));
   }
 
-  Future<List<Plant>> getPlants({int limit = 100}) async {
-    final data = await _request(method: 'GET', path: '/plants?page=1&limit=$limit');
-    return _list(data).map(Plant.fromJson).toList();
+  Future<Vendor> createVendor({
+    required String name,
+    required String phone,
+  }) async {
+    final data = await _request(
+      method: 'POST',
+      path: '/vendors',
+      body: {
+        'name': name,
+        'phone': phone,
+      },
+    );
+    return Vendor.fromJson(_map(data));
+  }
+
+  Future<Vendor> updateVendor({
+    required String vendorId,
+    required String name,
+    required String phone,
+  }) async {
+    final data = await _request(
+      method: 'PUT',
+      path: '/vendors/$vendorId',
+      body: {
+        'name': name,
+        'phone': phone,
+      },
+    );
+    return Vendor.fromJson(_map(data));
+  }
+
+  Future<void> deleteVendor(String vendorId) async {
+    await _request(method: 'DELETE', path: '/vendors/$vendorId');
+  }
+
+  Future<List<VendorSession>> getVendorSessions(String vendorId) async {
+    final data = await _request(method: 'GET', path: '/vendors/$vendorId/sessions');
+    return _list(data).map(VendorSession.fromJson).toList();
   }
 
   Future<List<Category>> getCategories() async {
@@ -85,7 +125,21 @@ class ApiService {
     return _list(data).map(Category.fromJson).toList();
   }
 
-  Future<Plant> createPlant({
+  Future<Category> createCategory(String name) async {
+    final data = await _request(
+      method: 'POST',
+      path: '/categories',
+      body: {'name': name},
+    );
+    return Category.fromJson(_map(data));
+  }
+
+  Future<List<Item>> getItems({int limit = 200}) async {
+    final data = await _request(method: 'GET', path: '/plants?page=1&limit=$limit');
+    return _list(data).map(Item.fromJson).toList();
+  }
+
+  Future<Item> createItem({
     required String name,
     required String categoryId,
     required double vendorPrice,
@@ -96,7 +150,6 @@ class ApiService {
       'categoryId': categoryId,
       'vendorPrice': vendorPrice,
     };
-
     if (retailPrice != null) {
       body['retailPrice'] = retailPrice;
     }
@@ -106,8 +159,7 @@ class ApiService {
       path: '/plants',
       body: body,
     );
-
-    return Plant.fromJson(_map(data));
+    return Item.fromJson(_map(data));
   }
 
   Future<SessionInfo> startSession(String vendorId) async {
@@ -126,9 +178,7 @@ class ApiService {
     await _request(
       method: 'POST',
       path: '/sessions/$sessionId/issue',
-      body: {
-        'items': _buildItems(quantities),
-      },
+      body: {'items': _buildItems(quantities)},
     );
   }
 
@@ -140,37 +190,28 @@ class ApiService {
       method: 'POST',
       path: '/sessions/$sessionId/return',
       body: {
-        'items': _buildItems(quantities).map((item) {
-          return {
-            ...item,
-            'condition': 'GOOD',
-          };
-        }).toList(),
+        'items': _buildItems(quantities)
+            .map((item) => {
+                  ...item,
+                  'condition': 'GOOD',
+                })
+            .toList(),
       },
     );
   }
 
   Future<SessionSummary> getSessionSummary(String sessionId) async {
-    final data = await _request(
-      method: 'GET',
-      path: '/sessions/$sessionId/summary',
-    );
+    final data = await _request(method: 'GET', path: '/sessions/$sessionId/summary');
     return SessionSummary.fromJson(_map(data));
   }
 
   Future<SessionCloseResult> closeSession(String sessionId) async {
-    final data = await _request(
-      method: 'POST',
-      path: '/sessions/$sessionId/close',
-    );
+    final data = await _request(method: 'POST', path: '/sessions/$sessionId/close');
     return SessionCloseResult.fromJson(_map(data));
   }
 
   Future<List<PaymentRecord>> getVendorPayments(String vendorId) async {
-    final data = await _request(
-      method: 'GET',
-      path: '/payments/vendor/$vendorId',
-    );
+    final data = await _request(method: 'GET', path: '/payments/vendor/$vendorId');
     return _list(data).map(PaymentRecord.fromJson).toList();
   }
 
@@ -185,16 +226,11 @@ class ApiService {
       'amount': amount,
       'mode': mode,
     };
-
     if (sessionId != null && sessionId.isNotEmpty) {
       body['sessionId'] = sessionId;
     }
 
-    final data = await _request(
-      method: 'POST',
-      path: '/payments',
-      body: body,
-    );
+    final data = await _request(method: 'POST', path: '/payments', body: body);
     return PaymentRecord.fromJson(_map(data));
   }
 
@@ -223,40 +259,36 @@ class ApiService {
       case 'POST':
         response = await _client.post(uri, headers: headers, body: encodedBody);
         break;
+      case 'PUT':
+        response = await _client.put(uri, headers: headers, body: encodedBody);
+        break;
+      case 'DELETE':
+        response = await _client.delete(uri, headers: headers);
+        break;
       default:
-        throw ApiException('Unsupported request method');
+        throw const ApiException('Request method not supported.');
     }
 
     final payload = _decodePayload(response);
-    final success = payload['success'] as bool? ?? false;
-    if (success) {
+    if ((payload['success'] as bool?) == true) {
       return payload['data'];
     }
 
-    if (response.statusCode == 401 && attachAuth) {
+    if (response.statusCode == 401 && attachAuth && !_unauthorizedHandled) {
+      _unauthorizedHandled = true;
       _token = null;
-      if (!_hasTriggeredUnauthorized) {
-        _hasTriggeredUnauthorized = true;
-        onUnauthorized?.call();
-      }
+      onUnauthorized?.call();
     }
 
     throw ApiException(
-      _friendlyMessage(
-        statusCode: response.statusCode,
-        path: path,
-        serverError: payload['error'] as String?,
-      ),
+      _messageFor(path: path, statusCode: response.statusCode, serverError: payload['error'] as String?),
       statusCode: response.statusCode,
     );
   }
 
   Map<String, dynamic> _decodePayload(http.Response response) {
     if (response.body.isEmpty) {
-      return {
-        'success': false,
-        'error': 'empty_response',
-      };
+      return {'success': false, 'error': 'empty_response'};
     }
 
     try {
@@ -265,72 +297,69 @@ class ApiService {
         return decoded;
       }
     } on FormatException {
-      return {
-        'success': false,
-        'error': 'invalid_response',
-      };
+      return {'success': false, 'error': 'invalid_response'};
     }
 
-    return {
-      'success': false,
-      'error': 'invalid_response',
-    };
+    return {'success': false, 'error': 'invalid_response'};
   }
 
-  String _friendlyMessage({
-    required int statusCode,
+  String _messageFor({
     required String path,
+    required int statusCode,
     String? serverError,
   }) {
     final error = (serverError ?? '').toLowerCase();
 
     if (statusCode == 401) {
       return path.contains('/auth/login')
-          ? 'Email or password is incorrect.'
-          : 'Please sign in again.';
+          ? 'Wrong email or password.'
+          : 'Please login again.';
     }
-
-    if (path.contains('/auth/login')) {
-      return 'Unable to sign in right now. Please check your details and try again.';
+    if (path.contains('/vendors') && statusCode == 404) {
+      return 'Vendor not found.';
     }
-
+    if (path.contains('/vendors') && path.contains('/sessions')) {
+      return 'Could not load session history.';
+    }
+    if (path.contains('/vendors') && error.contains('cannot be deleted')) {
+      return 'This vendor already has history and cannot be deleted.';
+    }
+    if (path.contains('/vendors')) {
+      return 'Could not save vendor details.';
+    }
+    if (path.contains('/categories')) {
+      return 'Could not save category right now.';
+    }
+    if (path.contains('/plants')) {
+      return path.contains('?') ? 'Could not load items right now.' : 'Could not save item right now.';
+    }
+    if (path.contains('/sessions/start')) {
+      return 'Could not start session.';
+    }
+    if (path.contains('/sessions/') && path.contains('/issue')) {
+      return 'Could not save issued items.';
+    }
     if (path.contains('/sessions/') && path.contains('/return')) {
       if (error.contains('exceeds issued')) {
-        return 'Return quantity is higher than issued stock.';
+        return 'Returned quantity cannot be more than issued quantity.';
       }
-      if (error.contains('no issued quantity')) {
-        return 'This plant was not issued in the current session.';
-      }
-      return 'Could not save the return. Please try again.';
+      return 'Could not save returned items.';
     }
-
-    if (path.contains('/sessions/') && path.contains('/issue')) {
-      return 'Could not save the issue. Please try again.';
+    if (path.contains('/sessions/') && path.contains('/close')) {
+      return 'Could not close session.';
     }
-
-    if (path.contains('/sessions/start')) {
-      return 'Could not start the session. Please try again.';
+    if (path.contains('/payments') && error.contains('exceeds vendor outstanding balance')) {
+      return 'Payment is more than the vendor balance.';
     }
-
     if (path.contains('/payments')) {
-      if (error.contains('exceeds vendor outstanding balance')) {
-        return 'Payment amount is higher than the current balance.';
-      }
-      return 'Could not save the payment. Please try again.';
+      return 'Could not save payment.';
     }
-
-    if (path.contains('/plants') && statusCode >= 400) {
-      return 'Could not load plant data right now.';
+    if (path.contains('/analytics')) {
+      return 'Could not load dashboard.';
     }
-
-    if (path.contains('/vendors')) {
-      return 'Could not load vendor information right now.';
-    }
-
     if (statusCode >= 500) {
-      return 'Server error. Please try again in a moment.';
+      return 'Server issue. Please try again.';
     }
-
     return 'Something went wrong. Please try again.';
   }
 

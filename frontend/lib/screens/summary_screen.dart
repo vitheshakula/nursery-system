@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../models/session_close_result.dart';
 import '../models/session_summary.dart';
 import '../services/api_service.dart';
 import '../utils/formatters.dart';
@@ -10,29 +9,27 @@ class SummaryScreen extends StatefulWidget {
     super.key,
     required this.apiService,
     required this.sessionId,
-    this.closeResult,
   });
 
   final ApiService apiService;
   final String sessionId;
-  final SessionCloseResult? closeResult;
 
   @override
   State<SummaryScreen> createState() => _SummaryScreenState();
 }
 
 class _SummaryScreenState extends State<SummaryScreen> {
-  late Future<SessionSummary> _summaryFuture;
+  late Future<SessionSummary> _future;
 
   @override
   void initState() {
     super.initState();
-    _summaryFuture = widget.apiService.getSessionSummary(widget.sessionId);
+    _future = widget.apiService.getSessionSummary(widget.sessionId);
   }
 
   void _reload() {
     setState(() {
-      _summaryFuture = widget.apiService.getSessionSummary(widget.sessionId);
+      _future = widget.apiService.getSessionSummary(widget.sessionId);
     });
   }
 
@@ -43,36 +40,20 @@ class _SummaryScreenState extends State<SummaryScreen> {
         title: const Text('Session Summary'),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
             onPressed: _reload,
             icon: const Icon(Icons.refresh),
           ),
         ],
       ),
       body: FutureBuilder<SessionSummary>(
-        future: _summaryFuture,
+        future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
           if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(snapshot.error.toString(), textAlign: TextAlign.center),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: _reload,
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              ),
-            );
+            return Center(child: Text(snapshot.error.toString()));
           }
 
           final summary = snapshot.data;
@@ -92,10 +73,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
                       Text(summary.vendorName, style: Theme.of(context).textTheme.headlineSmall),
                       const SizedBox(height: 8),
                       Text('Status: ${summary.status}'),
-                      if (widget.closeResult != null) ...[
-                        const SizedBox(height: 8),
-                        Text('Updated balance: ${formatCurrency(widget.closeResult!.vendorBalance)}'),
-                      ],
                     ],
                   ),
                 ),
@@ -105,29 +82,29 @@ class _SummaryScreenState extends State<SummaryScreen> {
                 crossAxisCount: 2,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
-                childAspectRatio: 1.7,
+                crossAxisSpacing: 12,
+                childAspectRatio: 1.8,
                 children: [
-                  _SummaryCard(label: 'Total issued', value: '${summary.totalIssued}'),
-                  _SummaryCard(label: 'Total returned', value: '${summary.totalReturned}'),
-                  _SummaryCard(label: 'Total sold', value: '${summary.totalSold}'),
-                  _SummaryCard(label: 'Total bill', value: formatCurrency(summary.totalBill)),
+                  _MetricCard(label: 'Total issued', value: '${summary.totalIssued}'),
+                  _MetricCard(label: 'Total returned', value: '${summary.totalReturned}'),
+                  _MetricCard(label: 'Total sold', value: '${summary.totalSold}'),
+                  _MetricCard(label: 'Total bill', value: formatCurrency(summary.totalBill)),
                 ],
               ),
-              const SizedBox(height: 16),
-              Text('Plant Summary', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              if (summary.plants.isEmpty)
+              const SizedBox(height: 20),
+              Text('Item details', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              if (summary.items.isEmpty)
                 const Card(
                   child: Padding(
                     padding: EdgeInsets.all(16),
-                    child: Text('No plant activity recorded yet.'),
+                    child: Text('No items in this session yet.'),
                   ),
                 )
               else
-                ...summary.plants.map(
-                  (plant) => Padding(
+                ...summary.items.map(
+                  (item) => Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Card(
                       child: Padding(
@@ -135,17 +112,17 @@ class _SummaryScreenState extends State<SummaryScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(plant.name, style: Theme.of(context).textTheme.titleMedium),
+                            Text(item.name, style: Theme.of(context).textTheme.titleMedium),
                             const SizedBox(height: 12),
                             Row(
                               children: [
-                                Expanded(child: _PlantMetric(label: 'Issued', value: '${plant.issued}')),
-                                Expanded(child: _PlantMetric(label: 'Returned', value: '${plant.returned}')),
-                                Expanded(child: _PlantMetric(label: 'Sold', value: '${plant.sold}')),
+                                Expanded(child: _MiniStat(label: 'Issued', value: '${item.issued}')),
+                                Expanded(child: _MiniStat(label: 'Returned', value: '${item.returned}')),
+                                Expanded(child: _MiniStat(label: 'Sold', value: '${item.sold}')),
                               ],
                             ),
-                            const SizedBox(height: 8),
-                            Text('Bill: ${formatCurrency(plant.total)}'),
+                            const SizedBox(height: 10),
+                            Text('Bill: ${formatCurrency(item.total)}'),
                           ],
                         ),
                       ),
@@ -160,8 +137,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
   }
 }
 
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({
+class _MetricCard extends StatelessWidget {
+  const _MetricCard({
     required this.label,
     required this.value,
   });
@@ -179,7 +156,7 @@ class _SummaryCard extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(label),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(value, style: Theme.of(context).textTheme.titleLarge),
           ],
         ),
@@ -188,8 +165,8 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
-class _PlantMetric extends StatelessWidget {
-  const _PlantMetric({
+class _MiniStat extends StatelessWidget {
+  const _MiniStat({
     required this.label,
     required this.value,
   });

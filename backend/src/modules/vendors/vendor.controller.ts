@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
 import { CreateVendorDto } from './dto/create-vendor.dto';
+import { UpdateVendorDto } from './dto/update-vendor.dto';
 import { VendorService } from './vendor.service';
 
 @Controller('vendors')
@@ -19,5 +20,20 @@ export class VendorController {
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.vendorService.findOne(id);
+  }
+
+  @Get(':id/sessions')
+  async getSessions(@Param('id') id: string) {
+    return this.vendorService.getSessionHistory(id);
+  }
+
+  @Put(':id')
+  async update(@Param('id') id: string, @Body() updateVendorDto: UpdateVendorDto) {
+    return this.vendorService.update(id, updateVendorDto);
+  }
+
+  @Delete(':id')
+  async remove(@Param('id') id: string) {
+    return this.vendorService.remove(id);
   }
 }

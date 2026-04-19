@@ -2,22 +2,22 @@ import 'package:flutter/material.dart';
 
 import 'models/app_user.dart';
 import 'models/auth_response.dart';
+import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
-import 'screens/vendor_list_screen.dart';
 import 'services/api_service.dart';
 
 void main() {
-  runApp(const NurseryApp());
+  runApp(const ShivRajNurseryApp());
 }
 
-class NurseryApp extends StatefulWidget {
-  const NurseryApp({super.key});
+class ShivRajNurseryApp extends StatefulWidget {
+  const ShivRajNurseryApp({super.key});
 
   @override
-  State<NurseryApp> createState() => _NurseryAppState();
+  State<ShivRajNurseryApp> createState() => _ShivRajNurseryAppState();
 }
 
-class _NurseryAppState extends State<NurseryApp> {
+class _ShivRajNurseryAppState extends State<ShivRajNurseryApp> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   late final ApiService _apiService;
   AppUser? _currentUser;
@@ -26,7 +26,7 @@ class _NurseryAppState extends State<NurseryApp> {
   void initState() {
     super.initState();
     _apiService = ApiService();
-    _apiService.onUnauthorized = _handleUnauthorized;
+    _apiService.onUnauthorized = () => _logout(showMessage: true);
   }
 
   void _handleLogin(AuthResponse auth) {
@@ -35,19 +35,16 @@ class _NurseryAppState extends State<NurseryApp> {
       _currentUser = auth.user;
     });
 
-    _navigatorKey.currentState?.pushReplacement(
+    _navigatorKey.currentState?.pushAndRemoveUntil(
       MaterialPageRoute<void>(
-        builder: (_) => VendorListScreen(
+        builder: (_) => HomeShell(
           apiService: _apiService,
           currentUser: auth.user,
           onLogout: () => _logout(),
         ),
       ),
+      (route) => false,
     );
-  }
-
-  void _handleUnauthorized() {
-    _logout(showMessage: true);
   }
 
   void _logout({bool showMessage = false}) {
@@ -71,9 +68,7 @@ class _NurseryAppState extends State<NurseryApp> {
         final context = _navigatorKey.currentContext;
         if (context != null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Your session expired. Please sign in again.'),
-            ),
+            const SnackBar(content: Text('Session expired. Please login again.')),
           );
         }
       });
@@ -82,21 +77,85 @@ class _NurseryAppState extends State<NurseryApp> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF2E6B3D),
+      primary: const Color(0xFF2E6B3D),
+      secondary: const Color(0xFFAED581),
+      surface: Colors.white,
+      brightness: Brightness.light,
+    );
+
     return MaterialApp(
       navigatorKey: _navigatorKey,
-      title: 'Nursery System',
+      title: 'Shiv Raj Nursery',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
-        scaffoldBackgroundColor: const Color(0xFFF6F7F3),
+        colorScheme: colorScheme,
         useMaterial3: true,
-        cardTheme: const CardTheme(
-          margin: EdgeInsets.zero,
-          elevation: 0,
+        scaffoldBackgroundColor: const Color(0xFFF7F6F1),
+        textTheme: const TextTheme(
+          headlineSmall: TextStyle(fontWeight: FontWeight.w700),
+          titleLarge: TextStyle(fontWeight: FontWeight.w700),
+          titleMedium: TextStyle(fontWeight: FontWeight.w600),
         ),
-        inputDecorationTheme: const InputDecorationTheme(
-          border: OutlineInputBorder(),
+        cardTheme: CardTheme(
+          color: Colors.white,
+          elevation: 3,
+          shadowColor: const Color(0x14000000),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          margin: EdgeInsets.zero,
+        ),
+        appBarTheme: AppBarTheme(
+          backgroundColor: const Color(0xFFF7F6F1),
+          foregroundColor: const Color(0xFF183A1D),
+          elevation: 0,
+          centerTitle: false,
+          titleTextStyle: const TextStyle(
+            color: Color(0xFF183A1D),
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
           filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xFF2E6B3D), width: 1.2),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF2E6B3D),
+            foregroundColor: Colors.white,
+            minimumSize: const Size.fromHeight(52),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(52),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            side: const BorderSide(color: Color(0xFF2E6B3D)),
+            foregroundColor: const Color(0xFF2E6B3D),
+          ),
+        ),
+        chipTheme: ChipThemeData(
+          backgroundColor: Colors.white,
+          selectedColor: const Color(0xFFDDECCF),
+          side: BorderSide.none,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          labelStyle: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
       home: _currentUser == null
@@ -104,7 +163,7 @@ class _NurseryAppState extends State<NurseryApp> {
               apiService: _apiService,
               onLoginSuccess: _handleLogin,
             )
-          : VendorListScreen(
+          : HomeShell(
               apiService: _apiService,
               currentUser: _currentUser!,
               onLogout: () => _logout(),

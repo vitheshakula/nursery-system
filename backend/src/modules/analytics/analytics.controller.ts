@@ -16,6 +16,11 @@ export class AnalyticsController {
     return this.analyticsService.getMonthlySales();
   }
 
+  @Get('dashboard')
+  async getDashboard() {
+    return this.analyticsService.getDashboardSummary();
+  }
+
   @Get('top-plants')
   async getTopPlants() {
     return this.analyticsService.getTopPlants();
