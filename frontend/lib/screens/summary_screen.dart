@@ -1,35 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/sessions/application/session_controller.dart';
 import '../models/session_summary.dart';
-import '../services/api_service.dart';
 import '../utils/formatters.dart';
 
-class SummaryScreen extends StatefulWidget {
+class SummaryScreen extends ConsumerStatefulWidget {
   const SummaryScreen({
     super.key,
-    required this.apiService,
     required this.sessionId,
   });
 
-  final ApiService apiService;
   final String sessionId;
 
   @override
-  State<SummaryScreen> createState() => _SummaryScreenState();
+  ConsumerState<SummaryScreen> createState() => _SummaryScreenState();
 }
 
-class _SummaryScreenState extends State<SummaryScreen> {
+class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   late Future<SessionSummary> _future;
 
   @override
   void initState() {
     super.initState();
-    _future = widget.apiService.getSessionSummary(widget.sessionId);
+    _future = ref.read(sessionApiProvider).getSessionSummary(widget.sessionId);
   }
 
   void _reload() {
     setState(() {
-      _future = widget.apiService.getSessionSummary(widget.sessionId);
+      _future =
+          ref.read(sessionApiProvider).getSessionSummary(widget.sessionId);
     });
   }
 
@@ -70,7 +70,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(summary.vendorName, style: Theme.of(context).textTheme.headlineSmall),
+                      Text(summary.vendorName,
+                          style: Theme.of(context).textTheme.headlineSmall),
                       const SizedBox(height: 8),
                       Text('Status: ${summary.status}'),
                     ],
@@ -86,14 +87,21 @@ class _SummaryScreenState extends State<SummaryScreen> {
                 crossAxisSpacing: 12,
                 childAspectRatio: 1.8,
                 children: [
-                  _MetricCard(label: 'Total issued', value: '${summary.totalIssued}'),
-                  _MetricCard(label: 'Total returned', value: '${summary.totalReturned}'),
-                  _MetricCard(label: 'Total sold', value: '${summary.totalSold}'),
-                  _MetricCard(label: 'Total bill', value: formatCurrency(summary.totalBill)),
+                  _MetricCard(
+                      label: 'Total issued', value: '${summary.totalIssued}'),
+                  _MetricCard(
+                      label: 'Total returned',
+                      value: '${summary.totalReturned}'),
+                  _MetricCard(
+                      label: 'Total sold', value: '${summary.totalSold}'),
+                  _MetricCard(
+                      label: 'Total bill',
+                      value: formatCurrency(summary.totalBill)),
                 ],
               ),
               const SizedBox(height: 20),
-              Text('Item details', style: Theme.of(context).textTheme.titleLarge),
+              Text('Item details',
+                  style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 12),
               if (summary.items.isEmpty)
                 const Card(
@@ -112,13 +120,22 @@ class _SummaryScreenState extends State<SummaryScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(item.name, style: Theme.of(context).textTheme.titleMedium),
+                            Text(item.name,
+                                style: Theme.of(context).textTheme.titleMedium),
                             const SizedBox(height: 12),
                             Row(
                               children: [
-                                Expanded(child: _MiniStat(label: 'Issued', value: '${item.issued}')),
-                                Expanded(child: _MiniStat(label: 'Returned', value: '${item.returned}')),
-                                Expanded(child: _MiniStat(label: 'Sold', value: '${item.sold}')),
+                                Expanded(
+                                    child: _MiniStat(
+                                        label: 'Issued',
+                                        value: '${item.issued}')),
+                                Expanded(
+                                    child: _MiniStat(
+                                        label: 'Returned',
+                                        value: '${item.returned}')),
+                                Expanded(
+                                    child: _MiniStat(
+                                        label: 'Sold', value: '${item.sold}')),
                               ],
                             ),
                             const SizedBox(height: 10),

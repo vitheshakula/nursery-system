@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/payments/data/payment_api.dart';
 import '../models/vendor.dart';
-import '../services/api_service.dart';
 import '../utils/formatters.dart';
 
-class SettlementScreen extends StatefulWidget {
+class SettlementScreen extends ConsumerStatefulWidget {
   const SettlementScreen({
     super.key,
-    required this.apiService,
     required this.vendor,
     required this.sessionId,
     required this.totalBill,
@@ -15,7 +15,6 @@ class SettlementScreen extends StatefulWidget {
     required this.newBalance,
   });
 
-  final ApiService apiService;
   final Vendor vendor;
   final String sessionId;
   final double totalBill;
@@ -23,10 +22,10 @@ class SettlementScreen extends StatefulWidget {
   final double newBalance;
 
   @override
-  State<SettlementScreen> createState() => _SettlementScreenState();
+  ConsumerState<SettlementScreen> createState() => _SettlementScreenState();
 }
 
-class _SettlementScreenState extends State<SettlementScreen> {
+class _SettlementScreenState extends ConsumerState<SettlementScreen> {
   final TextEditingController _cashController = TextEditingController();
   final TextEditingController _onlineController = TextEditingController();
   bool _isSaving = false;
@@ -62,8 +61,9 @@ class _SettlementScreenState extends State<SettlementScreen> {
     });
 
     try {
+      final paymentApi = ref.read(paymentApiProvider);
       if (_cashPaid > 0) {
-        await widget.apiService.createPayment(
+        await paymentApi.createPayment(
           vendorId: widget.vendor.id,
           amount: _cashPaid,
           mode: 'CASH',
@@ -72,7 +72,7 @@ class _SettlementScreenState extends State<SettlementScreen> {
       }
 
       if (_onlinePaid > 0) {
-        await widget.apiService.createPayment(
+        await paymentApi.createPayment(
           vendorId: widget.vendor.id,
           amount: _onlinePaid,
           mode: 'UPI',
@@ -106,7 +106,8 @@ class _SettlementScreenState extends State<SettlementScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -124,11 +125,18 @@ class _SettlementScreenState extends State<SettlementScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(widget.vendor.name, style: Theme.of(context).textTheme.headlineSmall),
+                  Text(widget.vendor.name,
+                      style: Theme.of(context).textTheme.headlineSmall),
                   const SizedBox(height: 12),
-                  _SettlementRow(label: 'Total bill', value: formatCurrency(widget.totalBill)),
-                  _SettlementRow(label: 'Previous balance', value: formatCurrency(widget.previousBalance)),
-                  _SettlementRow(label: 'New balance', value: formatCurrency(widget.newBalance)),
+                  _SettlementRow(
+                      label: 'Total bill',
+                      value: formatCurrency(widget.totalBill)),
+                  _SettlementRow(
+                      label: 'Previous balance',
+                      value: formatCurrency(widget.previousBalance)),
+                  _SettlementRow(
+                      label: 'New balance',
+                      value: formatCurrency(widget.newBalance)),
                 ],
               ),
             ),
@@ -161,9 +169,15 @@ class _SettlementScreenState extends State<SettlementScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _SettlementRow(label: 'Total received', value: formatCurrency(_totalPaid)),
-                  _SettlementRow(label: 'Remaining credit', value: formatCurrency(_remainingCredit)),
-                  _SettlementRow(label: 'Outstanding balance after payment', value: formatCurrency(_updatedOutstanding)),
+                  _SettlementRow(
+                      label: 'Total received',
+                      value: formatCurrency(_totalPaid)),
+                  _SettlementRow(
+                      label: 'Remaining credit',
+                      value: formatCurrency(_remainingCredit)),
+                  _SettlementRow(
+                      label: 'Outstanding balance after payment',
+                      value: formatCurrency(_updatedOutstanding)),
                 ],
               ),
             ),

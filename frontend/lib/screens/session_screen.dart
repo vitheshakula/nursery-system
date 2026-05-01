@@ -1,51 +1,39 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/sessions/application/session_controller.dart';
 import '../models/category.dart';
 import '../models/item.dart';
 import '../models/session_info.dart';
 import '../models/vendor.dart';
-import '../services/api_service.dart';
 import '../utils/formatters.dart';
 import 'settlement_screen.dart';
 import 'summary_screen.dart';
 
-enum SessionMode {
-  issue,
-  returnItems,
-}
-
-class SessionScreen extends StatefulWidget {
+class SessionScreen extends ConsumerStatefulWidget {
   const SessionScreen({
     super.key,
-    required this.apiService,
     required this.vendor,
     required this.session,
   });
 
-  final ApiService apiService;
   final Vendor vendor;
   final SessionInfo session;
 
   @override
-  State<SessionScreen> createState() => _SessionScreenState();
+  ConsumerState<SessionScreen> createState() => _SessionScreenState();
 }
 
-class _SessionScreenState extends State<SessionScreen> {
+class _SessionScreenState extends ConsumerState<SessionScreen> {
   final TextEditingController _searchController = TextEditingController();
-  final Map<String, int> _quantities = <String, int>{};
-  List<Item> _items = const <Item>[];
-  List<Category> _categories = const <Category>[];
-  String _selectedCategoryId = 'all';
-  SessionMode _mode = SessionMode.issue;
-  bool _isLoading = true;
-  bool _isSubmitting = false;
-  bool _isClosing = false;
-  String? _error;
+  late final AutoDisposeStateNotifierProvider<SessionController, SessionState>
+      _controller;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _controller = sessionControllerProvider(widget.session);
+    Future.microtask(_loadData);
   }
 
   @override
@@ -55,104 +43,42 @@ class _SessionScreenState extends State<SessionScreen> {
   }
 
   Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    try {
-      final results = await Future.wait([
-        widget.apiService.getItems(),
-        widget.apiService.getCategories(),
-      ]);
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _items = results[0] as List<Item>;
-        _categories = results[1] as List<Category>;
-      });
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _error = error.toString();
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
+    await ref.read(_controller.notifier).loadData();
   }
 
   void _changeQuantity(Item item, int delta) {
-    final current = _quantities[item.id] ?? 0;
-    final next = current + delta;
-    setState(() {
-      if (next <= 0) {
-        _quantities.remove(item.id);
-      } else {
-        _quantities[item.id] = next;
-      }
-    });
-  }
-
-  int get _totalQuantity => _quantities.values.fold<int>(0, (sum, quantity) => sum + quantity);
-
-  double get _estimatedBill {
-    return _items.fold<double>(0, (sum, item) {
-      return sum + ((_quantities[item.id] ?? 0) * item.vendorPrice);
-    });
+    ref.read(_controller.notifier).changeQuantity(item, delta);
   }
 
   Future<void> _submit() async {
-    final selected = Map<String, int>.fromEntries(
-      _quantities.entries.where((entry) => entry.value > 0),
-    );
+    final controller = ref.read(_controller.notifier);
+    final mode = ref.read(_controller).mode;
 
-    if (selected.isEmpty) {
+    if (ref
+        .read(_controller)
+        .quantities
+        .values
+        .every((quantity) => quantity <= 0)) {
       _showMessage('Select items first.');
       return;
     }
 
-    setState(() {
-      _isSubmitting = true;
-    });
-
     try {
-      if (_mode == SessionMode.issue) {
-        await widget.apiService.submitIssueItems(
-          sessionId: widget.session.id,
-          quantities: selected,
-        );
+      if (mode == SessionMode.issue) {
+        await controller.issueItems();
       } else {
-        await widget.apiService.submitReturnItems(
-          sessionId: widget.session.id,
-          quantities: selected,
-        );
+        await controller.returnItems();
       }
 
       if (!mounted) {
         return;
       }
 
-      setState(() {
-        _quantities.clear();
-      });
-      _showMessage(_mode == SessionMode.issue ? 'Issued items saved.' : 'Returned items saved.');
+      _showMessage(mode == SessionMode.issue
+          ? 'Issued items saved.'
+          : 'Returned items saved.');
     } catch (error) {
       _showMessage(error.toString());
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-        });
-      }
     }
   }
 
@@ -160,7 +86,6 @@ class _SessionScreenState extends State<SessionScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => SummaryScreen(
-          apiService: widget.apiService,
           sessionId: widget.session.id,
         ),
       ),
@@ -191,12 +116,8 @@ class _SessionScreenState extends State<SessionScreen> {
       return;
     }
 
-    setState(() {
-      _isClosing = true;
-    });
-
     try {
-      final closeResult = await widget.apiService.closeSession(widget.session.id);
+      final closeResult = await ref.read(_controller.notifier).closeSession();
       if (!mounted) {
         return;
       }
@@ -204,7 +125,6 @@ class _SessionScreenState extends State<SessionScreen> {
       final settled = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (_) => SettlementScreen(
-            apiService: widget.apiService,
             vendor: widget.vendor,
             sessionId: widget.session.id,
             totalBill: closeResult.totalBill,
@@ -223,12 +143,6 @@ class _SessionScreenState extends State<SessionScreen> {
       }
     } catch (error) {
       _showMessage(error.toString());
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isClosing = false;
-        });
-      }
     }
   }
 
@@ -240,10 +154,13 @@ class _SessionScreenState extends State<SessionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(_controller);
     final query = _searchController.text.trim().toLowerCase();
-    final filteredItems = _items.where((item) {
-      final categoryMatch = _selectedCategoryId == 'all' || item.categoryId == _selectedCategoryId;
-      final searchMatch = query.isEmpty || item.name.toLowerCase().contains(query);
+    final filteredItems = state.items.where((item) {
+      final categoryMatch = state.selectedCategoryId == 'all' ||
+          item.categoryId == state.selectedCategoryId;
+      final searchMatch =
+          query.isEmpty || item.name.toLowerCase().contains(query);
       return categoryMatch && searchMatch;
     }).toList();
 
@@ -257,10 +174,10 @@ class _SessionScreenState extends State<SessionScreen> {
           ),
         ],
       ),
-      body: _isLoading
+      body: state.isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Text(_error!))
+          : state.errorMessage != null
+              ? Center(child: Text(state.errorMessage!))
               : Column(
                   children: [
                     Padding(
@@ -275,7 +192,8 @@ class _SessionScreenState extends State<SessionScreen> {
                                 children: [
                                   Text(
                                     'Session active for ${widget.vendor.name}',
-                                    style: Theme.of(context).textTheme.titleLarge,
+                                    style:
+                                        Theme.of(context).textTheme.titleLarge,
                                   ),
                                   const SizedBox(height: 12),
                                   SegmentedButton<SessionMode>(
@@ -288,14 +206,15 @@ class _SessionScreenState extends State<SessionScreen> {
                                       ButtonSegment(
                                         value: SessionMode.returnItems,
                                         label: Text('Return'),
-                                        icon: Icon(Icons.assignment_return_outlined),
+                                        icon: Icon(
+                                            Icons.assignment_return_outlined),
                                       ),
                                     ],
-                                    selected: <SessionMode>{_mode},
+                                    selected: <SessionMode>{state.mode},
                                     onSelectionChanged: (selection) {
-                                      setState(() {
-                                        _mode = selection.first;
-                                      });
+                                      ref
+                                          .read(_controller.notifier)
+                                          .setMode(selection.first);
                                     },
                                   ),
                                   const SizedBox(height: 12),
@@ -314,27 +233,34 @@ class _SessionScreenState extends State<SessionScreen> {
                                       scrollDirection: Axis.horizontal,
                                       children: [
                                         Padding(
-                                          padding: const EdgeInsets.only(right: 8),
+                                          padding:
+                                              const EdgeInsets.only(right: 8),
                                           child: ChoiceChip(
                                             label: const Text('All'),
-                                            selected: _selectedCategoryId == 'all',
+                                            selected:
+                                                state.selectedCategoryId ==
+                                                    'all',
                                             onSelected: (_) {
-                                              setState(() {
-                                                _selectedCategoryId = 'all';
-                                              });
+                                              ref
+                                                  .read(_controller.notifier)
+                                                  .setSelectedCategory('all');
                                             },
                                           ),
                                         ),
-                                        ..._categories.map(
+                                        ...state.categories.map(
                                           (category) => Padding(
-                                            padding: const EdgeInsets.only(right: 8),
+                                            padding:
+                                                const EdgeInsets.only(right: 8),
                                             child: ChoiceChip(
                                               label: Text(category.name),
-                                              selected: _selectedCategoryId == category.id,
+                                              selected:
+                                                  state.selectedCategoryId ==
+                                                      category.id,
                                               onSelected: (_) {
-                                                setState(() {
-                                                  _selectedCategoryId = category.id;
-                                                });
+                                                ref
+                                                    .read(_controller.notifier)
+                                                    .setSelectedCategory(
+                                                        category.id);
                                               },
                                             ),
                                           ),
@@ -355,15 +281,18 @@ class _SessionScreenState extends State<SessionScreen> {
                           : ListView.separated(
                               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                               itemCount: filteredItems.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 12),
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 12),
                               itemBuilder: (context, index) {
                                 final item = filteredItems[index];
-                                final quantity = _quantities[item.id] ?? 0;
+                                final quantity = state.quantities[item.id] ?? 0;
                                 final selected = quantity > 0;
-                                final categoryName = _categories
+                                final categoryName = state.categories
                                     .firstWhere(
-                                      (category) => category.id == item.categoryId,
-                                      orElse: () => const Category(id: '', name: 'Others'),
+                                      (category) =>
+                                          category.id == item.categoryId,
+                                      orElse: () => const Category(
+                                          id: '', name: 'Others'),
                                     )
                                     .name;
 
@@ -382,7 +311,9 @@ class _SessionScreenState extends State<SessionScreen> {
                                         : const [],
                                   ),
                                   child: Card(
-                                    color: selected ? const Color(0xFFF0F7E9) : Colors.white,
+                                    color: selected
+                                        ? const Color(0xFFF0F7E9)
+                                        : Colors.white,
                                     child: Padding(
                                       padding: const EdgeInsets.all(16),
                                       child: Row(
@@ -391,28 +322,41 @@ class _SessionScreenState extends State<SessionScreen> {
                                             width: 50,
                                             height: 50,
                                             decoration: BoxDecoration(
-                                              color: selected ? const Color(0xFFD7EBC5) : const Color(0xFFEFF4EA),
-                                              borderRadius: BorderRadius.circular(14),
+                                              color: selected
+                                                  ? const Color(0xFFD7EBC5)
+                                                  : const Color(0xFFEFF4EA),
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
                                             ),
-                                            child: const Icon(Icons.inventory_2_outlined),
+                                            child: const Icon(
+                                                Icons.inventory_2_outlined),
                                           ),
                                           const SizedBox(width: 12),
                                           Expanded(
                                             child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
-                                                Text(item.name, style: Theme.of(context).textTheme.titleMedium),
+                                                Text(item.name,
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .titleMedium),
                                                 const SizedBox(height: 4),
                                                 Text(categoryName),
                                                 const SizedBox(height: 4),
-                                                Text('Vendor ${formatCurrency(item.vendorPrice)}'),
+                                                Text(
+                                                    'Vendor ${formatCurrency(item.vendorPrice)}'),
                                               ],
                                             ),
                                           ),
                                           _QuantityStepper(
                                             quantity: quantity,
-                                            onIncrement: () => _changeQuantity(item, 1),
-                                            onDecrement: quantity == 0 ? null : () => _changeQuantity(item, -1),
+                                            onIncrement: () =>
+                                                _changeQuantity(item, 1),
+                                            onDecrement: quantity == 0
+                                                ? null
+                                                : () =>
+                                                    _changeQuantity(item, -1),
                                           ),
                                         ],
                                       ),
@@ -423,11 +367,13 @@ class _SessionScreenState extends State<SessionScreen> {
                             ),
                     ),
                     _SummaryBar(
-                      totalQuantity: _totalQuantity,
-                      estimatedBill: _estimatedBill,
-                      isSubmitting: _isSubmitting,
-                      isClosing: _isClosing,
-                      submitLabel: _mode == SessionMode.issue ? 'Submit Issue' : 'Submit Return',
+                      totalQuantity: state.totalQuantity,
+                      estimatedBill: state.estimatedBill,
+                      isSubmitting: state.isSubmitting,
+                      isClosing: state.isClosing,
+                      submitLabel: state.mode == SessionMode.issue
+                          ? 'Submit Issue'
+                          : 'Submit Return',
                       onSubmit: _submit,
                       onViewSummary: _viewSummary,
                       onCloseSession: _closeSession,
@@ -531,11 +477,14 @@ class _SummaryBar extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: _SummaryStat(label: 'Total qty', value: '$totalQuantity'),
+                  child:
+                      _SummaryStat(label: 'Total qty', value: '$totalQuantity'),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _SummaryStat(label: 'Estimated bill', value: formatCurrency(estimatedBill)),
+                  child: _SummaryStat(
+                      label: 'Estimated bill',
+                      value: formatCurrency(estimatedBill)),
                 ),
               ],
             ),

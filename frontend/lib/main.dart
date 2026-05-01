@@ -1,44 +1,38 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'models/app_user.dart';
+import 'features/auth/presentation/auth_provider.dart';
 import 'models/auth_response.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
-import 'services/api_service.dart';
 
 void main() {
-  runApp(const ShivRajNurseryApp());
+  runApp(const ProviderScope(child: ShivRajNurseryApp()));
 }
 
-class ShivRajNurseryApp extends StatefulWidget {
+class ShivRajNurseryApp extends ConsumerStatefulWidget {
   const ShivRajNurseryApp({super.key});
 
   @override
-  State<ShivRajNurseryApp> createState() => _ShivRajNurseryAppState();
+  ConsumerState<ShivRajNurseryApp> createState() => _ShivRajNurseryAppState();
 }
 
-class _ShivRajNurseryAppState extends State<ShivRajNurseryApp> {
+class _ShivRajNurseryAppState extends ConsumerState<ShivRajNurseryApp> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
-  late final ApiService _apiService;
-  AppUser? _currentUser;
+  bool _loginNavigationScheduled = false;
 
   @override
   void initState() {
     super.initState();
-    _apiService = ApiService();
-    _apiService.onUnauthorized = () => _logout(showMessage: true);
+    Future.microtask(
+      () => ref.read(authProvider.notifier).loadTokenOnStartup(),
+    );
   }
 
   void _handleLogin(AuthResponse auth) {
-    _apiService.token = auth.accessToken;
-    setState(() {
-      _currentUser = auth.user;
-    });
-
     _navigatorKey.currentState?.pushAndRemoveUntil(
       MaterialPageRoute<void>(
         builder: (_) => HomeShell(
-          apiService: _apiService,
           currentUser: auth.user,
           onLogout: () => _logout(),
         ),
@@ -47,21 +41,8 @@ class _ShivRajNurseryAppState extends State<ShivRajNurseryApp> {
     );
   }
 
-  void _logout({bool showMessage = false}) {
-    _apiService.token = null;
-    setState(() {
-      _currentUser = null;
-    });
-
-    _navigatorKey.currentState?.pushAndRemoveUntil(
-      MaterialPageRoute<void>(
-        builder: (_) => LoginScreen(
-          apiService: _apiService,
-          onLoginSuccess: _handleLogin,
-        ),
-      ),
-      (route) => false,
-    );
+  Future<void> _logout({bool showMessage = false}) async {
+    await ref.read(authProvider.notifier).logout();
 
     if (showMessage) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -78,6 +59,41 @@ class _ShivRajNurseryAppState extends State<ShivRajNurseryApp> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AuthState>(authProvider, (previous, next) {
+      final wasAuthenticated = previous?.isAuthenticated ?? false;
+      if (!wasAuthenticated || next.status != AuthStatus.unauthenticated) {
+        return;
+      }
+
+      if (_loginNavigationScheduled) {
+        return;
+      }
+
+      _loginNavigationScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _navigatorKey.currentState?.pushAndRemoveUntil(
+          MaterialPageRoute<void>(
+            builder: (_) => LoginScreen(
+              onLoginSuccess: _handleLogin,
+            ),
+          ),
+          (route) => false,
+        );
+        _loginNavigationScheduled = false;
+      });
+    });
+
+    ref.listen<int>(unauthorizedEventProvider, (previous, next) {
+      if (previous == null || next == previous) {
+        return;
+      }
+
+      ref.read(authProvider.notifier).handleUnauthorized();
+    });
+
+    final authState = ref.watch(authProvider);
+    final currentUser = authState.currentUser;
+
     final colorScheme = ColorScheme.fromSeed(
       seedColor: const Color(0xFF2E6B3D),
       primary: const Color(0xFF2E6B3D),
@@ -108,12 +124,12 @@ class _ShivRajNurseryAppState extends State<ShivRajNurseryApp> {
           ),
           margin: EdgeInsets.zero,
         ),
-        appBarTheme: AppBarTheme(
-          backgroundColor: const Color(0xFFF7F6F1),
-          foregroundColor: const Color(0xFF183A1D),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFFF7F6F1),
+          foregroundColor: Color(0xFF183A1D),
           elevation: 0,
           centerTitle: false,
-          titleTextStyle: const TextStyle(
+          titleTextStyle: TextStyle(
             color: Color(0xFF183A1D),
             fontSize: 22,
             fontWeight: FontWeight.w700,
@@ -166,16 +182,27 @@ class _ShivRajNurseryAppState extends State<ShivRajNurseryApp> {
           labelStyle: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
-      home: _currentUser == null
-          ? LoginScreen(
-              apiService: _apiService,
-              onLoginSuccess: _handleLogin,
-            )
-          : HomeShell(
-              apiService: _apiService,
-              currentUser: _currentUser!,
-              onLogout: () => _logout(),
-            ),
+      home: authState.isLoading
+          ? const _StartupLoadingScreen()
+          : currentUser == null
+              ? LoginScreen(
+                  onLoginSuccess: _handleLogin,
+                )
+              : HomeShell(
+                  currentUser: currentUser,
+                  onLogout: () => _logout(),
+                ),
+    );
+  }
+}
+
+class _StartupLoadingScreen extends StatelessWidget {
+  const _StartupLoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: CircularProgressIndicator()),
     );
   }
 }

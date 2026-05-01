@@ -1,35 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/vendors/presentation/vendor_provider.dart';
 import '../models/app_user.dart';
 import '../models/vendor.dart';
-import '../services/api_service.dart';
 import '../utils/formatters.dart';
 import 'vendor_detail_screen.dart';
 
-class VendorListScreen extends StatefulWidget {
+class VendorListScreen extends ConsumerStatefulWidget {
   const VendorListScreen({
     super.key,
-    required this.apiService,
     required this.currentUser,
   });
 
-  final ApiService apiService;
   final AppUser currentUser;
 
   @override
-  State<VendorListScreen> createState() => VendorListScreenState();
+  ConsumerState<VendorListScreen> createState() => VendorListScreenState();
 }
 
-class VendorListScreenState extends State<VendorListScreen> {
+class VendorListScreenState extends ConsumerState<VendorListScreen> {
   final TextEditingController _searchController = TextEditingController();
-  List<Vendor> _vendors = const <Vendor>[];
-  bool _isLoading = true;
-  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _loadVendors();
+    Future.microtask(_loadVendors);
   }
 
   @override
@@ -39,33 +35,7 @@ class VendorListScreenState extends State<VendorListScreen> {
   }
 
   Future<void> _loadVendors() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    try {
-      final vendors = await widget.apiService.getVendors();
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _vendors = vendors;
-      });
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _error = error.toString();
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
+    await ref.read(vendorProvider.notifier).fetchVendors();
   }
 
   void openVendorForm([Vendor? vendor]) {
@@ -77,7 +47,6 @@ class VendorListScreenState extends State<VendorListScreen> {
       context: context,
       isScrollControlled: true,
       builder: (_) => _VendorFormSheet(
-        apiService: widget.apiService,
         vendor: vendor,
       ),
     );
@@ -86,7 +55,9 @@ class VendorListScreenState extends State<VendorListScreen> {
       await _loadVendors();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(vendor == null ? 'Vendor added.' : 'Vendor updated.')),
+          SnackBar(
+              content:
+                  Text(vendor == null ? 'Vendor added.' : 'Vendor updated.')),
         );
       }
     }
@@ -117,7 +88,7 @@ class VendorListScreenState extends State<VendorListScreen> {
     }
 
     try {
-      await widget.apiService.deleteVendor(vendor.id);
+      await ref.read(vendorProvider.notifier).deleteVendor(vendor.id);
       await _loadVendors();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -137,7 +108,6 @@ class VendorListScreenState extends State<VendorListScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => VendorDetailScreen(
-          apiService: widget.apiService,
           vendor: vendor,
         ),
       ),
@@ -147,8 +117,9 @@ class VendorListScreenState extends State<VendorListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final vendorState = ref.watch(vendorProvider);
     final query = _searchController.text.trim().toLowerCase();
-    final filtered = _vendors.where((vendor) {
+    final filtered = vendorState.vendors.where((vendor) {
       return query.isEmpty ||
           vendor.name.toLowerCase().contains(query) ||
           vendor.phone.toLowerCase().contains(query);
@@ -183,15 +154,20 @@ class VendorListScreenState extends State<VendorListScreen> {
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: _isLoading
+              child: vendorState.isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : _error != null
-                      ? _VendorStateMessage(message: _error!, onRetry: _loadVendors)
+                  : vendorState.errorMessage != null
+                      ? _VendorStateMessage(
+                          message: vendorState.errorMessage!,
+                          onRetry: _loadVendors,
+                        )
                       : filtered.isEmpty
-                          ? const _VendorStateMessage(message: 'No vendors yet.')
+                          ? const _VendorStateMessage(
+                              message: 'No vendors yet.')
                           : ListView.separated(
                               itemCount: filtered.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 12),
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 12),
                               itemBuilder: (context, index) {
                                 final vendor = filtered[index];
                                 return Card(
@@ -207,23 +183,29 @@ class VendorListScreenState extends State<VendorListScreen> {
                                             height: 52,
                                             decoration: BoxDecoration(
                                               color: const Color(0xFFDDECCF),
-                                              borderRadius: BorderRadius.circular(16),
+                                              borderRadius:
+                                                  BorderRadius.circular(16),
                                             ),
-                                            child: const Icon(Icons.storefront_outlined),
+                                            child: const Icon(
+                                                Icons.storefront_outlined),
                                           ),
                                           const SizedBox(width: 12),
                                           Expanded(
                                             child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
                                                 Text(
                                                   vendor.name,
-                                                  style: Theme.of(context).textTheme.titleMedium,
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .titleMedium,
                                                 ),
                                                 const SizedBox(height: 4),
                                                 Text(vendor.phone),
                                                 const SizedBox(height: 4),
-                                                Text('Balance: ${formatCurrency(vendor.balance)}'),
+                                                Text(
+                                                    'Balance: ${formatCurrency(vendor.balance)}'),
                                               ],
                                             ),
                                           ),
@@ -261,20 +243,18 @@ class VendorListScreenState extends State<VendorListScreen> {
   }
 }
 
-class _VendorFormSheet extends StatefulWidget {
+class _VendorFormSheet extends ConsumerStatefulWidget {
   const _VendorFormSheet({
-    required this.apiService,
     this.vendor,
   });
 
-  final ApiService apiService;
   final Vendor? vendor;
 
   @override
-  State<_VendorFormSheet> createState() => _VendorFormSheetState();
+  ConsumerState<_VendorFormSheet> createState() => _VendorFormSheetState();
 }
 
-class _VendorFormSheetState extends State<_VendorFormSheet> {
+class _VendorFormSheetState extends ConsumerState<_VendorFormSheet> {
   late final TextEditingController _nameController;
   late final TextEditingController _phoneController;
   bool _isSaving = false;
@@ -308,12 +288,15 @@ class _VendorFormSheetState extends State<_VendorFormSheet> {
 
     try {
       final vendor = widget.vendor == null
-          ? await widget.apiService.createVendor(name: name, phone: phone)
-          : await widget.apiService.updateVendor(
-              vendorId: widget.vendor!.id,
-              name: name,
-              phone: phone,
-            );
+          ? await ref.read(vendorProvider.notifier).addVendor(
+                name: name,
+                phone: phone,
+              )
+          : await ref.read(vendorProvider.notifier).updateVendor(
+                id: widget.vendor!.id,
+                name: name,
+                phone: phone,
+              );
 
       if (!mounted) {
         return;
@@ -331,7 +314,8 @@ class _VendorFormSheetState extends State<_VendorFormSheet> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
