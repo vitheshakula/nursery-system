@@ -1,28 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/payments/data/payment_api.dart';
+import '../features/sessions/application/session_controller.dart';
+import '../features/vendors/presentation/vendor_provider.dart';
 import '../models/payment.dart';
 import '../models/vendor.dart';
 import '../models/vendor_session.dart';
-import '../services/api_service.dart';
 import '../utils/formatters.dart';
 import 'session_screen.dart';
 import 'summary_screen.dart';
 
-class VendorDetailScreen extends StatefulWidget {
+class VendorDetailScreen extends ConsumerStatefulWidget {
   const VendorDetailScreen({
     super.key,
-    required this.apiService,
     required this.vendor,
   });
 
-  final ApiService apiService;
   final Vendor vendor;
 
   @override
-  State<VendorDetailScreen> createState() => _VendorDetailScreenState();
+  ConsumerState<VendorDetailScreen> createState() => _VendorDetailScreenState();
 }
 
-class _VendorDetailScreenState extends State<VendorDetailScreen> {
+class _VendorDetailScreenState extends ConsumerState<VendorDetailScreen> {
   late Vendor _vendor;
   List<VendorSession> _sessions = const <VendorSession>[];
   List<PaymentRecord> _payments = const <PaymentRecord>[];
@@ -44,10 +45,12 @@ class _VendorDetailScreenState extends State<VendorDetailScreen> {
     });
 
     try {
+      final vendorApi = ref.read(vendorApiProvider);
+      final paymentApi = ref.read(paymentApiProvider);
       final results = await Future.wait([
-        widget.apiService.getVendor(_vendor.id),
-        widget.apiService.getVendorSessions(_vendor.id),
-        widget.apiService.getVendorPayments(_vendor.id),
+        vendorApi.getVendor(_vendor.id),
+        vendorApi.getVendorSessions(_vendor.id),
+        paymentApi.getVendorPayments(_vendor.id),
       ]);
 
       if (!mounted) {
@@ -80,7 +83,8 @@ class _VendorDetailScreenState extends State<VendorDetailScreen> {
     });
 
     try {
-      final session = await widget.apiService.startSession(_vendor.id);
+      final session =
+          await ref.read(sessionApiProvider).startSession(_vendor.id);
       if (!mounted) {
         return;
       }
@@ -88,7 +92,6 @@ class _VendorDetailScreenState extends State<VendorDetailScreen> {
       final changed = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (_) => SessionScreen(
-            apiService: widget.apiService,
             vendor: _vendor,
             session: session,
           ),
@@ -117,7 +120,6 @@ class _VendorDetailScreenState extends State<VendorDetailScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => SummaryScreen(
-          apiService: widget.apiService,
           sessionId: session.id,
         ),
       ),
@@ -150,17 +152,22 @@ class _VendorDetailScreenState extends State<VendorDetailScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(_vendor.name, style: Theme.of(context).textTheme.headlineSmall),
+                              Text(_vendor.name,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall),
                               const SizedBox(height: 8),
                               Text('Phone: ${_vendor.phone}'),
                               const SizedBox(height: 4),
-                              Text('Balance: ${formatCurrency(_vendor.balance)}'),
+                              Text(
+                                  'Balance: ${formatCurrency(_vendor.balance)}'),
                             ],
                           ),
                         ),
                       ),
                       const SizedBox(height: 20),
-                      Text('Sessions history', style: Theme.of(context).textTheme.titleLarge),
+                      Text('Sessions history',
+                          style: Theme.of(context).textTheme.titleLarge),
                       const SizedBox(height: 12),
                       if (_sessions.isEmpty)
                         const _SectionEmptyState(message: 'No sessions yet.')
@@ -172,7 +179,9 @@ class _VendorDetailScreenState extends State<VendorDetailScreen> {
                               child: ListTile(
                                 onTap: () => _openSessionSummary(session),
                                 title: Text(
-                                  session.status == 'ACTIVE' ? 'Active session' : 'Closed session',
+                                  session.status == 'ACTIVE'
+                                      ? 'Active session'
+                                      : 'Closed session',
                                 ),
                                 subtitle: Text(
                                   '${formatDateTime(session.createdAt)}\nSold: ${session.totalSold}  Bill: ${formatCurrency(session.totalBill)}',
@@ -183,7 +192,8 @@ class _VendorDetailScreenState extends State<VendorDetailScreen> {
                           ),
                         ),
                       const SizedBox(height: 20),
-                      Text('Payments history', style: Theme.of(context).textTheme.titleLarge),
+                      Text('Payments history',
+                          style: Theme.of(context).textTheme.titleLarge),
                       const SizedBox(height: 12),
                       if (_payments.isEmpty)
                         const _SectionEmptyState(message: 'No payments yet.')
@@ -195,10 +205,12 @@ class _VendorDetailScreenState extends State<VendorDetailScreen> {
                               child: ListTile(
                                 leading: CircleAvatar(
                                   backgroundColor: const Color(0xFFDDECCF),
-                                  child: Text(payment.mode == 'UPI' ? 'U' : 'C'),
+                                  child:
+                                      Text(payment.mode == 'UPI' ? 'U' : 'C'),
                                 ),
                                 title: Text(formatCurrency(payment.amount)),
-                                subtitle: Text('${payment.mode} - ${formatDateTime(payment.createdAt)}'),
+                                subtitle: Text(
+                                    '${payment.mode} - ${formatDateTime(payment.createdAt)}'),
                               ),
                             ),
                           ),

@@ -1,21 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/inventory/data/inventory_api.dart';
 import '../models/category.dart';
-import '../services/api_service.dart';
 
-class CategoryManagementScreen extends StatefulWidget {
+class CategoryManagementScreen extends ConsumerStatefulWidget {
   const CategoryManagementScreen({
     super.key,
-    required this.apiService,
   });
 
-  final ApiService apiService;
-
   @override
-  State<CategoryManagementScreen> createState() => _CategoryManagementScreenState();
+  ConsumerState<CategoryManagementScreen> createState() =>
+      _CategoryManagementScreenState();
 }
 
-class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
+class _CategoryManagementScreenState
+    extends ConsumerState<CategoryManagementScreen> {
   final TextEditingController _nameController = TextEditingController();
   List<Category> _categories = const <Category>[];
   bool _isLoading = true;
@@ -41,7 +41,7 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
     });
 
     try {
-      final categories = await widget.apiService.getCategories();
+      final categories = await ref.read(inventoryApiProvider).getCategories();
       if (!mounted) {
         return;
       }
@@ -76,7 +76,7 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
     });
 
     try {
-      await widget.apiService.createCategory(name);
+      await ref.read(inventoryApiProvider).createCategory(name);
       _nameController.clear();
       await _load();
       if (!mounted) {
@@ -95,7 +95,8 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -136,10 +137,12 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
                   : _error != null
                       ? Center(child: Text(_error!))
                       : _categories.isEmpty
-                          ? const Center(child: Text('No categories available.'))
+                          ? const Center(
+                              child: Text('No categories available.'))
                           : ListView.separated(
                               itemCount: _categories.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 12),
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 12),
                               itemBuilder: (context, index) {
                                 final category = _categories[index];
                                 return Card(

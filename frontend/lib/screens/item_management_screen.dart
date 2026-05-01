@@ -1,27 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/inventory/data/inventory_api.dart';
 import '../models/app_user.dart';
 import '../models/category.dart';
 import '../models/item.dart';
-import '../services/api_service.dart';
 import '../utils/formatters.dart';
 import 'category_management_screen.dart';
 
-class ItemManagementScreen extends StatefulWidget {
+class ItemManagementScreen extends ConsumerStatefulWidget {
   const ItemManagementScreen({
     super.key,
-    required this.apiService,
     required this.currentUser,
   });
 
-  final ApiService apiService;
   final AppUser currentUser;
 
   @override
-  State<ItemManagementScreen> createState() => ItemManagementScreenState();
+  ConsumerState<ItemManagementScreen> createState() =>
+      ItemManagementScreenState();
 }
 
-class ItemManagementScreenState extends State<ItemManagementScreen> {
+class ItemManagementScreenState extends ConsumerState<ItemManagementScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<Item> _items = const <Item>[];
   List<Category> _categories = const <Category>[];
@@ -48,9 +48,10 @@ class ItemManagementScreenState extends State<ItemManagementScreen> {
     });
 
     try {
+      final inventoryApi = ref.read(inventoryApiProvider);
       final results = await Future.wait([
-        widget.apiService.getItems(),
-        widget.apiService.getCategories(),
+        inventoryApi.getItems(),
+        inventoryApi.getCategories(),
       ]);
 
       if (!mounted) {
@@ -86,7 +87,6 @@ class ItemManagementScreenState extends State<ItemManagementScreen> {
       context: context,
       isScrollControlled: true,
       builder: (_) => _ItemFormSheet(
-        apiService: widget.apiService,
         categories: _categories,
       ),
     );
@@ -104,7 +104,7 @@ class ItemManagementScreenState extends State<ItemManagementScreen> {
   Future<void> _openCategoryManagement() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => CategoryManagementScreen(apiService: widget.apiService),
+        builder: (_) => const CategoryManagementScreen(),
       ),
     );
     await _loadData();
@@ -114,8 +114,10 @@ class ItemManagementScreenState extends State<ItemManagementScreen> {
   Widget build(BuildContext context) {
     final search = _searchController.text.trim().toLowerCase();
     final filtered = _items.where((item) {
-      final categoryMatch = _selectedCategoryId == 'all' || item.categoryId == _selectedCategoryId;
-      final searchMatch = search.isEmpty || item.name.toLowerCase().contains(search);
+      final categoryMatch = _selectedCategoryId == 'all' ||
+          item.categoryId == _selectedCategoryId;
+      final searchMatch =
+          search.isEmpty || item.name.toLowerCase().contains(search);
       return categoryMatch && searchMatch;
     }).toList();
 
@@ -199,13 +201,16 @@ class ItemManagementScreenState extends State<ItemManagementScreen> {
                           ? const _StateMessage(message: 'No items available.')
                           : ListView.separated(
                               itemCount: filtered.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 12),
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 12),
                               itemBuilder: (context, index) {
                                 final item = filtered[index];
                                 final categoryName = _categories
                                     .firstWhere(
-                                      (category) => category.id == item.categoryId,
-                                      orElse: () => const Category(id: '', name: 'Others'),
+                                      (category) =>
+                                          category.id == item.categoryId,
+                                      orElse: () => const Category(
+                                          id: '', name: 'Others'),
                                     )
                                     .name;
 
@@ -219,25 +224,36 @@ class ItemManagementScreenState extends State<ItemManagementScreen> {
                                           height: 52,
                                           decoration: BoxDecoration(
                                             color: const Color(0xFFDDECCF),
-                                            borderRadius: BorderRadius.circular(16),
+                                            borderRadius:
+                                                BorderRadius.circular(16),
                                           ),
-                                          child: const Icon(Icons.inventory_2_outlined),
+                                          child: const Icon(
+                                              Icons.inventory_2_outlined),
                                         ),
                                         const SizedBox(width: 12),
                                         Expanded(
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
-                                              Text(item.name, style: Theme.of(context).textTheme.titleMedium),
+                                              Text(item.name,
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .titleMedium),
                                               const SizedBox(height: 6),
                                               Wrap(
                                                 spacing: 8,
                                                 runSpacing: 8,
                                                 children: [
-                                                  _InfoPill(label: categoryName),
-                                                  _InfoPill(label: 'Vendor ${formatCurrency(item.vendorPrice)}'),
+                                                  _InfoPill(
+                                                      label: categoryName),
+                                                  _InfoPill(
+                                                      label:
+                                                          'Vendor ${formatCurrency(item.vendorPrice)}'),
                                                   if (item.retailPrice != null)
-                                                    _InfoPill(label: 'Retail ${formatCurrency(item.retailPrice!)}'),
+                                                    _InfoPill(
+                                                        label:
+                                                            'Retail ${formatCurrency(item.retailPrice!)}'),
                                                 ],
                                               ),
                                             ],
@@ -257,20 +273,18 @@ class ItemManagementScreenState extends State<ItemManagementScreen> {
   }
 }
 
-class _ItemFormSheet extends StatefulWidget {
+class _ItemFormSheet extends ConsumerStatefulWidget {
   const _ItemFormSheet({
-    required this.apiService,
     required this.categories,
   });
 
-  final ApiService apiService;
   final List<Category> categories;
 
   @override
-  State<_ItemFormSheet> createState() => _ItemFormSheetState();
+  ConsumerState<_ItemFormSheet> createState() => _ItemFormSheetState();
 }
 
-class _ItemFormSheetState extends State<_ItemFormSheet> {
+class _ItemFormSheetState extends ConsumerState<_ItemFormSheet> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _vendorPriceController = TextEditingController();
   final TextEditingController _retailPriceController = TextEditingController();
@@ -280,7 +294,8 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedCategoryId = widget.categories.isEmpty ? null : widget.categories.first.id;
+    _selectedCategoryId =
+        widget.categories.isEmpty ? null : widget.categories.first.id;
   }
 
   @override
@@ -295,9 +310,13 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     final name = _nameController.text.trim();
     final vendorPrice = double.tryParse(_vendorPriceController.text.trim());
     final retailPriceText = _retailPriceController.text.trim();
-    final retailPrice = retailPriceText.isEmpty ? null : double.tryParse(retailPriceText);
+    final retailPrice =
+        retailPriceText.isEmpty ? null : double.tryParse(retailPriceText);
 
-    if (name.isEmpty || _selectedCategoryId == null || vendorPrice == null || vendorPrice <= 0) {
+    if (name.isEmpty ||
+        _selectedCategoryId == null ||
+        vendorPrice == null ||
+        vendorPrice <= 0) {
       _showMessage('Enter item name, category and valid price.');
       return;
     }
@@ -307,12 +326,12 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     });
 
     try {
-      await widget.apiService.createItem(
-        name: name,
-        categoryId: _selectedCategoryId!,
-        vendorPrice: vendorPrice,
-        retailPrice: retailPrice,
-      );
+      await ref.read(inventoryApiProvider).createItem(
+            name: name,
+            categoryId: _selectedCategoryId!,
+            vendorPrice: vendorPrice,
+            retailPrice: retailPrice,
+          );
 
       if (!mounted) {
         return;
@@ -330,7 +349,8 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -355,7 +375,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: _selectedCategoryId,
+                initialValue: _selectedCategoryId,
                 decoration: const InputDecoration(labelText: 'Category'),
                 items: widget.categories
                     .map(
@@ -376,14 +396,17 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
               const SizedBox(height: 12),
               TextField(
                 controller: _vendorPriceController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(labelText: 'Vendor price'),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _retailPriceController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Retail price (optional)'),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration:
+                    const InputDecoration(labelText: 'Retail price (optional)'),
               ),
               const SizedBox(height: 16),
               FilledButton(
@@ -413,7 +436,8 @@ class _InfoPill extends StatelessWidget {
         color: const Color(0xFFF0F5EA),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+      child: Text(label,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
     );
   }
 }

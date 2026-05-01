@@ -1,27 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/auth/presentation/auth_provider.dart';
 import '../models/auth_response.dart';
-import '../services/api_service.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({
     super.key,
-    required this.apiService,
     required this.onLoginSuccess,
   });
 
-  final ApiService apiService;
   final ValueChanged<AuthResponse> onLoginSuccess;
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  final TextEditingController _emailController = TextEditingController(text: 'admin@company.com');
-  final TextEditingController _passwordController = TextEditingController(text: 'password');
-  bool _isLoading = false;
+  final TextEditingController _emailController =
+      TextEditingController(text: 'admin@company.com');
+  final TextEditingController _passwordController =
+      TextEditingController(text: 'password');
 
   @override
   void dispose() {
@@ -35,15 +35,11 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
-
     try {
-      final auth = await widget.apiService.login(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-      );
+      final auth = await ref.read(authProvider.notifier).login(
+            email: _emailController.text.trim(),
+            password: _passwordController.text,
+          );
       if (!mounted) {
         return;
       }
@@ -55,17 +51,13 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(error.toString())),
       );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isLoading = ref.watch(authProvider).isLoading;
+
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -106,7 +98,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 16),
                         TextFormField(
                           controller: _passwordController,
-                          decoration: const InputDecoration(labelText: 'Password'),
+                          decoration:
+                              const InputDecoration(labelText: 'Password'),
                           obscureText: true,
                           validator: (value) {
                             if (value == null || value.isEmpty) {
@@ -117,8 +110,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 24),
                         FilledButton(
-                          onPressed: _isLoading ? null : _submit,
-                          child: Text(_isLoading ? 'Signing in...' : 'Login'),
+                          onPressed: isLoading ? null : _submit,
+                          child: Text(isLoading ? 'Signing in...' : 'Login'),
                         ),
                       ],
                     ),
