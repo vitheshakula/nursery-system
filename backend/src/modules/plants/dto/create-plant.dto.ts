@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreatePlantDto {
   @IsString()
@@ -18,4 +18,10 @@ export class CreatePlantDto {
   @Type(() => Number)
   @IsNumber()
   retailPrice?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  initialStock?: number;
 }

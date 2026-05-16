@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { InventoryMovementType, LedgerEntryType, SessionStatus } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
 
 type ClosedSessionInfo = {
@@ -24,7 +25,7 @@ export class AnalyticsService {
     const [closedToday, activeSessions, vendorsWithBalance] = await this.prisma.$transaction([
       this.prisma.session.findMany({
         where: {
-          status: 'CLOSED',
+          status: SessionStatus.CLOSED,
           closedAt: {
             gte: startOfDay,
             lt: endOfDay,
@@ -36,7 +37,7 @@ export class AnalyticsService {
       }),
       this.prisma.session.count({
         where: {
-          status: 'ACTIVE',
+          status: SessionStatus.ACTIVE,
         },
       }),
       this.prisma.vendor.count({
@@ -131,10 +132,325 @@ export class AnalyticsService {
     );
   }
 
+  async getOperationalReport() {
+    const { startOfDay, endOfDay } = this.getTodayBounds();
+
+    const [
+      issuedToday,
+      returnedToday,
+      collectionsToday,
+      outstandingVendors,
+      topIssuedGroups,
+    ] = await this.prisma.$transaction([
+      this.prisma.issueItem.aggregate({
+        where: {
+          createdAt: {
+            gte: startOfDay,
+            lt: endOfDay,
+          },
+        },
+        _sum: { quantity: true },
+      }),
+      this.prisma.returnItem.aggregate({
+        where: {
+          createdAt: {
+            gte: startOfDay,
+            lt: endOfDay,
+          },
+        },
+        _sum: { quantity: true },
+      }),
+      this.prisma.ledgerEntry.aggregate({
+        where: {
+          type: LedgerEntryType.PAYMENT_RECEIVED,
+          createdAt: {
+            gte: startOfDay,
+            lt: endOfDay,
+          },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.vendor.findMany({
+        where: {
+          balance: {
+            gt: 0,
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          balance: true,
+        },
+        orderBy: { balance: 'desc' },
+      }),
+      this.prisma.issueItem.groupBy({
+        by: ['plantId'],
+        where: {
+          createdAt: {
+            gte: startOfDay,
+            lt: endOfDay,
+          },
+        },
+        _sum: { quantity: true },
+        orderBy: {
+          _sum: {
+            quantity: 'desc',
+          },
+        },
+        take: 10,
+      }),
+    ]);
+
+    const topPlantIds = topIssuedGroups.map((item) => item.plantId);
+    const plants = await this.prisma.plant.findMany({
+      where: { id: { in: topPlantIds } },
+      select: { id: true, name: true, vendorPrice: true },
+    });
+    const plantMap = new Map(plants.map((plant) => [plant.id, plant]));
+
+    return {
+      date: startOfDay,
+      todayIssuedQuantity: issuedToday._sum.quantity ?? 0,
+      todayReturnedQuantity: returnedToday._sum.quantity ?? 0,
+      todayCollections: Math.abs(collectionsToday._sum.amount ?? 0),
+      vendorOutstandingSummary: {
+        vendorCount: outstandingVendors.length,
+        totalOutstanding: outstandingVendors.reduce(
+          (sum, vendor) => sum + vendor.balance,
+          0,
+        ),
+        vendors: outstandingVendors,
+      },
+      topMovingInventoryItems: topIssuedGroups.map((item) => {
+        const plant = plantMap.get(item.plantId);
+        return {
+          plantId: item.plantId,
+          name: plant?.name ?? 'Unknown',
+          issuedQuantity: item._sum?.quantity ?? 0,
+          vendorPrice: plant?.vendorPrice ?? 0,
+        };
+      }),
+    };
+  }
+
+  async getOperationalInsights(days = 7, lowStockThreshold = 5, largeBalanceThreshold = 1000) {
+    const safeDays = Math.max(1, Math.min(days, 90));
+    const safeLowStockThreshold = Math.max(0, lowStockThreshold);
+    const safeLargeBalanceThreshold = Math.max(0, largeBalanceThreshold);
+    const now = new Date();
+    const since = new Date(now.getFullYear(), now.getMonth(), now.getDate() - safeDays + 1);
+    const today = this.getTodayBounds();
+    const staleBefore = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+
+    const [
+      lowStockItems,
+      movementGroups,
+      adjustmentGroups,
+      stagnantItems,
+      largeBalanceVendors,
+      todayCollections,
+      activeSessions,
+    ] = await this.prisma.$transaction([
+      this.prisma.plant.findMany({
+        where: { currentStock: { lte: safeLowStockThreshold } },
+        select: {
+          id: true,
+          name: true,
+          currentStock: true,
+          vendorPrice: true,
+        },
+        orderBy: [{ currentStock: 'asc' }, { name: 'asc' }],
+        take: 10,
+      }),
+      this.prisma.inventoryMovement.groupBy({
+        by: ['itemId', 'type'],
+        where: { createdAt: { gte: since } },
+        _sum: { quantity: true },
+        _count: { _all: true },
+        orderBy: [{ itemId: 'asc' }, { type: 'asc' }],
+      }),
+      this.prisma.inventoryMovement.groupBy({
+        by: ['itemId'],
+        where: {
+          type: { in: [InventoryMovementType.ADJUSTMENT, InventoryMovementType.DAMAGE] },
+          createdAt: { gte: since },
+        },
+        _count: { _all: true },
+        _sum: { quantity: true },
+        orderBy: { _count: { itemId: 'desc' } },
+        take: 10,
+      }),
+      this.prisma.plant.findMany({
+        where: {
+          currentStock: { gt: safeLowStockThreshold },
+          inventoryMovements: {
+            none: { createdAt: { gte: staleBefore } },
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+          currentStock: true,
+          updatedAt: true,
+        },
+        orderBy: [{ currentStock: 'desc' }, { name: 'asc' }],
+        take: 10,
+      }),
+      this.prisma.vendor.findMany({
+        where: { balance: { gte: safeLargeBalanceThreshold } },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          balance: true,
+          updatedAt: true,
+        },
+        orderBy: { balance: 'desc' },
+        take: 10,
+      }),
+      this.prisma.ledgerEntry.aggregate({
+        where: {
+          type: LedgerEntryType.PAYMENT_RECEIVED,
+          createdAt: { gte: today.startOfDay, lt: today.endOfDay },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.session.count({ where: { status: SessionStatus.ACTIVE } }),
+    ]);
+
+    const reconciliationRisk = await Promise.all([
+      this.prisma.plant.count({
+        where: {
+          currentStock: {
+            not: 0,
+          },
+          inventoryMovements: {
+            none: {},
+          },
+        },
+      }),
+      this.prisma.vendor.count({
+        where: {
+          balance: { not: 0 },
+          ledgerEntries: { none: {} },
+        },
+      }),
+    ]);
+
+    const plantIds = [
+      ...new Set([
+        ...movementGroups.map((item) => item.itemId),
+        ...adjustmentGroups.map((item) => item.itemId),
+      ]),
+    ];
+    const plants = await this.prisma.plant.findMany({
+      where: { id: { in: plantIds } },
+      select: { id: true, name: true, currentStock: true },
+    });
+    const plantMap = new Map(plants.map((plant) => [plant.id, plant]));
+
+    const movementByPlant = new Map<
+      string,
+      { itemId: string; name: string; issued: number; returned: number; netMovement: number; movementCount: number }
+    >();
+
+    for (const group of movementGroups) {
+      const plant = plantMap.get(group.itemId);
+      const current = movementByPlant.get(group.itemId) ?? {
+        itemId: group.itemId,
+        name: plant?.name ?? 'Unknown',
+        issued: 0,
+        returned: 0,
+        netMovement: 0,
+        movementCount: 0,
+      };
+
+      const quantity = group._sum?.quantity ?? 0;
+      if (group.type === InventoryMovementType.ISSUE_OUT) {
+        current.issued += Math.abs(quantity);
+      }
+      if (group.type === InventoryMovementType.RETURN_IN) {
+        current.returned += quantity;
+      }
+      current.netMovement += quantity;
+      current.movementCount += this.readGroupCount(group._count);
+      movementByPlant.set(group.itemId, current);
+    }
+
+    const topMovingItems = Array.from(movementByPlant.values())
+      .sort((left, right) => right.issued - left.issued)
+      .slice(0, 10);
+
+    const movementSpikeItems = topMovingItems.filter((item) => item.issued >= 25);
+
+    const repeatedAdjustments = adjustmentGroups.map((item) => {
+      const plant = plantMap.get(item.itemId);
+      return {
+        itemId: item.itemId,
+        name: plant?.name ?? 'Unknown',
+        adjustmentCount: this.readGroupCount(item._count),
+        netAdjustment: item._sum?.quantity ?? 0,
+      };
+    });
+
+    const alerts = [
+      ...lowStockItems.map((item) => ({
+        type: 'LOW_STOCK',
+        severity: item.currentStock === 0 ? 'HIGH' : 'MEDIUM',
+        message: `${item.name} stock is ${item.currentStock}`,
+        refId: item.id,
+      })),
+      ...largeBalanceVendors.map((vendor) => ({
+        type: 'LARGE_BALANCE',
+        severity: 'MEDIUM',
+        message: `${vendor.name} outstanding is ${vendor.balance}`,
+        refId: vendor.id,
+      })),
+      ...repeatedAdjustments
+        .filter((item) => item.adjustmentCount >= 2)
+        .map((item) => ({
+          type: 'REPEATED_ADJUSTMENT',
+          severity: 'MEDIUM',
+          message: `${item.name} adjusted ${item.adjustmentCount} times`,
+          refId: item.itemId,
+        })),
+      ...movementSpikeItems.map((item) => ({
+        type: 'MOVEMENT_SPIKE',
+        severity: 'LOW',
+        message: `${item.name} issued ${item.issued} in ${safeDays} days`,
+        refId: item.itemId,
+      })),
+    ];
+
+    return {
+      windowDays: safeDays,
+      generatedAt: now,
+      dailySnapshot: {
+        activeSessions,
+        todayCollections: Math.abs(todayCollections._sum.amount ?? 0),
+        lowStockCount: lowStockItems.length,
+        largeBalanceCount: largeBalanceVendors.length,
+        reconciliationRiskCount: reconciliationRisk[0] + reconciliationRisk[1],
+      },
+      alerts: alerts.slice(0, 20),
+      inventory: {
+        lowStockItems,
+        topMovingItems,
+        movementSpikeItems,
+        repeatedAdjustments,
+        stagnantItems,
+      },
+      vendors: {
+        largeBalanceVendors,
+      },
+    };
+  }
+
   private async buildClosedSessionAnalytics() {
     const sessions = await this.prisma.session.findMany({
       where: {
-        status: 'CLOSED',
+        status: SessionStatus.CLOSED,
         closedAt: { not: null },
       },
       select: {
@@ -290,7 +606,19 @@ export class AnalyticsService {
     return `${sessionId}:${plantId}`;
   }
 
+  private readGroupCount(count: true | { _all?: number } | undefined) {
+    return typeof count === 'object' ? count._all ?? 0 : 0;
+  }
+
   private formatMonthKey(date: Date) {
     return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
+
+  private getTodayBounds() {
+    const now = new Date();
+    return {
+      startOfDay: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+      endOfDay: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1),
+    };
   }
 }

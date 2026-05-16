@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
     super.key,
@@ -53,7 +55,7 @@ class PrimaryButton extends StatelessWidget {
           backgroundColor: const Color(0xFF2E6B3D),
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           textStyle: const TextStyle(
             fontWeight: FontWeight.w800,

@@ -5,6 +5,8 @@ import 'features/auth/presentation/auth_provider.dart';
 import 'models/auth_response.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
+import 'shared/theme/app_theme.dart';
+import 'shared/widgets/brand_logo.dart';
 
 void main() {
   runApp(const ProviderScope(child: ShivRajNurseryApp()));
@@ -94,94 +96,11 @@ class _ShivRajNurseryAppState extends ConsumerState<ShivRajNurseryApp> {
     final authState = ref.watch(authProvider);
     final currentUser = authState.currentUser;
 
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF2E6B3D),
-      primary: const Color(0xFF2E6B3D),
-      secondary: const Color(0xFFAED581),
-      surface: Colors.white,
-      brightness: Brightness.light,
-    );
-
     return MaterialApp(
       navigatorKey: _navigatorKey,
-      title: 'Shiv Raj Nursery',
+      title: 'Shivraj Nursery',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: colorScheme,
-        useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF7F6F1),
-        textTheme: const TextTheme(
-          headlineSmall: TextStyle(fontWeight: FontWeight.w700),
-          titleLarge: TextStyle(fontWeight: FontWeight.w700),
-          titleMedium: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        cardTheme: CardThemeData(
-          color: Colors.white,
-          elevation: 3,
-          shadowColor: const Color(0x14000000),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          margin: EdgeInsets.zero,
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFFF7F6F1),
-          foregroundColor: Color(0xFF183A1D),
-          elevation: 0,
-          centerTitle: false,
-          titleTextStyle: TextStyle(
-            color: Color(0xFF183A1D),
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFF2E6B3D), width: 1.2),
-          ),
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF2E6B3D),
-            foregroundColor: Colors.white,
-            minimumSize: const Size.fromHeight(52),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            textStyle:
-                const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-        ),
-        outlinedButtonTheme: OutlinedButtonThemeData(
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(52),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            side: const BorderSide(color: Color(0xFF2E6B3D)),
-            foregroundColor: const Color(0xFF2E6B3D),
-          ),
-        ),
-        chipTheme: ChipThemeData(
-          backgroundColor: Colors.white,
-          selectedColor: const Color(0xFFDDECCF),
-          side: BorderSide.none,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          labelStyle: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-      ),
+      theme: buildAppTheme(),
       home: authState.isLoading
           ? const _StartupLoadingScreen()
           : currentUser == null
@@ -202,7 +121,59 @@ class _StartupLoadingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
+      body: _BrandedSplashBody(),
+    );
+  }
+}
+
+class _BrandedSplashBody extends StatelessWidget {
+  const _BrandedSplashBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Color(0xFFEAF3E8),
+            Color(0xFFF7F8FA),
+          ],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      child: Center(
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 520),
+          curve: Curves.easeOut,
+          builder: (context, value, child) {
+            return Opacity(
+              opacity: value,
+              child: Transform.translate(
+                offset: Offset(0, 10 * (1 - value)),
+                child: child,
+              ),
+            );
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const BrandLogo(size: 84),
+              const SizedBox(height: 22),
+              Text(
+                'Shivraj Nursery',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Track. Sell. Grow.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

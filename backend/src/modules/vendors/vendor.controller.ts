@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, DefaultValuePipe, Delete, Get, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
 import { CreateVendorDto } from './dto/create-vendor.dto';
 import { UpdateVendorDto } from './dto/update-vendor.dto';
 import { VendorService } from './vendor.service';
@@ -20,6 +20,22 @@ export class VendorController {
   @Get(':id/sessions')
   async getSessions(@Param('id') id: string) {
     return this.vendorService.getSessionHistory(id);
+  }
+
+  @Get(':id/ledger')
+  async getLedger(
+    @Param('id') id: string,
+    @Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit: number,
+  ) {
+    return this.vendorService.getLedgerHistory(id, limit);
+  }
+
+  @Get(':id/payments')
+  async getPayments(
+    @Param('id') id: string,
+    @Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit: number,
+  ) {
+    return this.vendorService.getPaymentTimeline(id, limit);
   }
 
   @Get(':id')

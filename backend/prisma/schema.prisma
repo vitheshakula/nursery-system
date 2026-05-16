@@ -14,6 +14,7 @@ model User {
   password  String
   role      Role
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Vendor {
@@ -22,14 +23,17 @@ model Vendor {
   phone     String
   balance   Float    @default(0)
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  sessions  Session[]
-  payments  Payment[]
+  sessions      Session[]
+  payments      Payment[]
+  ledgerEntries LedgerEntry[]
 }
 
 model Category {
   id     String  @id @default(uuid())
   name   String  @unique
+  updatedAt DateTime @updatedAt
 
   plants Plant[]
 }
@@ -40,12 +44,15 @@ model Plant {
   categoryId   String
   vendorPrice  Float
   retailPrice  Float?
+  currentStock Int      @default(0)
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   category Category @relation(fields: [categoryId], references: [id])
 
-  issueItems  IssueItem[]
-  returnItems ReturnItem[]
+  issueItems         IssueItem[]
+  returnItems        ReturnItem[]
+  inventoryMovements InventoryMovement[]
 }
 
 model Session {
@@ -53,13 +60,19 @@ model Session {
   vendorId  String
   status    SessionStatus @default(ACTIVE)
   createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
   closedAt  DateTime?
+  notes     String?
+  createdBy String?
+  closedBy  String?
 
   vendor Vendor @relation(fields: [vendorId], references: [id])
 
-  issueItems  IssueItem[]
-  returnItems ReturnItem[]
-  payments    Payment[]
+  issueItems    IssueItem[]
+  returnItems   ReturnItem[]
+  payments      Payment[]
+  ledgerEntries LedgerEntry[]
+  inventoryMovements InventoryMovement[]
 }
 
 model IssueItem {
@@ -68,6 +81,8 @@ model IssueItem {
   plantId   String
   quantity  Int
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  notes     String?
 
   session Session @relation(fields: [sessionId], references: [id])
   plant   Plant   @relation(fields: [plantId], references: [id])
@@ -80,6 +95,8 @@ model ReturnItem {
   quantity  Int
   condition PlantCondition
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  notes     String?
 
   session Session @relation(fields: [sessionId], references: [id])
   plant   Plant   @relation(fields: [plantId], references: [id])
@@ -92,9 +109,58 @@ model Payment {
   amount    Float
   mode      PaymentMode
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  notes     String?
 
   vendor  Vendor  @relation(fields: [vendorId], references: [id])
   session Session? @relation(fields: [sessionId], references: [id])
+}
+
+model LedgerEntry {
+  id        String          @id @default(uuid())
+  vendorId  String
+  sessionId String?
+  type      LedgerEntryType
+  amount    Float
+  notes     String?
+  createdBy String?
+  createdAt DateTime        @default(now())
+
+  vendor  Vendor   @relation(fields: [vendorId], references: [id])
+  session Session? @relation(fields: [sessionId], references: [id])
+
+  @@index([vendorId, createdAt])
+  @@index([sessionId])
+  @@index([type, createdAt])
+}
+
+model InventoryMovement {
+  id        String                @id @default(uuid())
+  itemId    String
+  sessionId String?
+  type      InventoryMovementType
+  quantity  Int
+  notes     String?
+  createdBy String?
+  createdAt DateTime              @default(now())
+
+  plant   Plant    @relation(fields: [itemId], references: [id])
+  session Session? @relation(fields: [sessionId], references: [id])
+
+  @@index([itemId, createdAt])
+  @@index([sessionId])
+  @@index([type, createdAt])
+}
+
+model IdempotencyRecord {
+  id        String                  @id @default(uuid())
+  requestId String                  @unique
+  operation IdempotentOperationType
+  response  Json?
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  @@index([operation, createdAt])
 }
 
 enum Role {
@@ -103,8 +169,10 @@ enum Role {
 }
 
 enum SessionStatus {
+  DRAFT
   ACTIVE
   CLOSED
+  SETTLED
 }
 
 enum PaymentMode {
@@ -115,4 +183,28 @@ enum PaymentMode {
 enum PlantCondition {
   GOOD
   DAMAGED
+}
+
+enum LedgerEntryType {
+  SESSION_DUE
+  PAYMENT_RECEIVED
+  BALANCE_ADJUSTMENT
+  REFUND
+  MANUAL_CORRECTION
+}
+
+enum InventoryMovementType {
+  ISSUE_OUT
+  RETURN_IN
+  DAMAGE
+  ADJUSTMENT
+  PURCHASE
+}
+
+enum IdempotentOperationType {
+  ISSUE_ITEMS
+  RETURN_ITEMS
+  SESSION_CLOSE
+  PAYMENT_CREATE
+  INVENTORY_ADJUSTMENT
 }

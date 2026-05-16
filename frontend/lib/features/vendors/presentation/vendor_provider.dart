@@ -1,7 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../models/payment.dart';
 import '../../../models/vendor.dart';
+import '../../../models/vendor_session.dart';
+import '../../payments/data/payment_api.dart';
 import '../../auth/presentation/auth_provider.dart';
+import '../../../core/sync/sync_engine.dart';
 import '../data/vendor_api.dart';
 
 class VendorState {
@@ -30,12 +34,25 @@ class VendorState {
 }
 
 final vendorApiProvider = Provider<VendorApi>((ref) {
-  return VendorApi(ref.watch(apiClientProvider));
+  return VendorApi(
+    ref.watch(apiClientProvider),
+    cache: ref.watch(offlineCacheProvider),
+  );
 });
 
 final vendorProvider =
     StateNotifierProvider<VendorNotifier, VendorState>((ref) {
   return VendorNotifier(ref.watch(vendorApiProvider));
+});
+
+final sessionsProvider =
+    FutureProvider.family<List<VendorSession>, String>((ref, vendorId) {
+  return ref.watch(vendorApiProvider).getVendorSessions(vendorId);
+});
+
+final paymentsProvider =
+    FutureProvider.family<List<PaymentRecord>, String>((ref, vendorId) {
+  return ref.watch(paymentApiProvider).getVendorPayments(vendorId);
 });
 
 class VendorNotifier extends StateNotifier<VendorState> {

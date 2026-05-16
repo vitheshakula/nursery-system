@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 class AppCard extends StatelessWidget {
   const AppCard({
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(16),
     this.color = Colors.white,
-    this.radius = 16,
+    this.radius = AppRadii.card,
     this.onTap,
   });
 
@@ -26,7 +28,7 @@ class AppCard extends StatelessWidget {
         boxShadow: const [
           BoxShadow(
             color: Color(0x10000000),
-            blurRadius: 18,
+            blurRadius: 16,
             offset: Offset(0, 8),
           ),
         ],

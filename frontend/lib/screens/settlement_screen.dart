@@ -9,14 +9,12 @@ class SettlementScreen extends ConsumerStatefulWidget {
   const SettlementScreen({
     super.key,
     required this.vendor,
-    required this.sessionId,
     required this.totalBill,
     required this.previousBalance,
     required this.newBalance,
   });
 
   final Vendor vendor;
-  final String sessionId;
   final double totalBill;
   final double previousBalance;
   final double newBalance;
@@ -67,7 +65,6 @@ class _SettlementScreenState extends ConsumerState<SettlementScreen> {
           vendorId: widget.vendor.id,
           amount: _cashPaid,
           mode: 'CASH',
-          sessionId: widget.sessionId,
         );
       }
 
@@ -76,7 +73,6 @@ class _SettlementScreenState extends ConsumerState<SettlementScreen> {
           vendorId: widget.vendor.id,
           amount: _onlinePaid,
           mode: 'UPI',
-          sessionId: widget.sessionId,
         );
       }
 

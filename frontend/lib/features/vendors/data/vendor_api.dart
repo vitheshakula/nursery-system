@@ -1,15 +1,26 @@
 import '../../../core/network/api_client.dart';
+import '../../../core/network/api_exception.dart';
+import '../../../core/offline/offline_cache_repository.dart';
 import '../../../models/vendor.dart';
 import '../../../models/vendor_session.dart';
 
 class VendorApi {
-  const VendorApi(this._apiClient);
+  const VendorApi(this._apiClient, {this.cache});
 
   final ApiClient _apiClient;
+  final OfflineCacheRepository? cache;
 
   Future<List<Vendor>> getVendors() async {
+    const cacheKey = 'vendors';
+    try {
     final data = await _apiClient.get('/vendors');
-    return _list(data).map(Vendor.fromJson).toList();
+    final rows = _list(data);
+    await cache?.cacheList(cacheKey, rows);
+    return rows.map(Vendor.fromJson).toList();
+    } on ApiException catch (error) {
+      if (error.type != ApiExceptionType.network || cache == null) rethrow;
+      return (await cache!.readList(cacheKey)).map(Vendor.fromJson).toList();
+    }
   }
 
   Future<Vendor> getVendor(String id) async {

@@ -1,0 +1,47 @@
+-- Phase 3: ledger foundation, audit timestamps, and explicit session states.
+
+ALTER TYPE "SessionStatus" ADD VALUE IF NOT EXISTS 'DRAFT';
+ALTER TYPE "SessionStatus" ADD VALUE IF NOT EXISTS 'SETTLED';
+
+CREATE TYPE "LedgerEntryType" AS ENUM (
+    'SESSION_DUE',
+    'PAYMENT_RECEIVED',
+    'BALANCE_ADJUSTMENT',
+    'REFUND',
+    'MANUAL_CORRECTION'
+);
+
+ALTER TABLE "User" ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Vendor" ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Category" ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Plant" ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Session" ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Session" ADD COLUMN "notes" TEXT;
+ALTER TABLE "Session" ADD COLUMN "createdBy" TEXT;
+ALTER TABLE "Session" ADD COLUMN "closedBy" TEXT;
+ALTER TABLE "IssueItem" ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "IssueItem" ADD COLUMN "notes" TEXT;
+ALTER TABLE "ReturnItem" ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "ReturnItem" ADD COLUMN "notes" TEXT;
+ALTER TABLE "Payment" ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Payment" ADD COLUMN "notes" TEXT;
+
+CREATE TABLE "LedgerEntry" (
+    "id" TEXT NOT NULL,
+    "vendorId" TEXT NOT NULL,
+    "sessionId" TEXT,
+    "type" "LedgerEntryType" NOT NULL,
+    "amount" DOUBLE PRECISION NOT NULL,
+    "notes" TEXT,
+    "createdBy" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "LedgerEntry_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX "LedgerEntry_vendorId_createdAt_idx" ON "LedgerEntry"("vendorId", "createdAt");
+CREATE INDEX "LedgerEntry_sessionId_idx" ON "LedgerEntry"("sessionId");
+CREATE INDEX "LedgerEntry_type_createdAt_idx" ON "LedgerEntry"("type", "createdAt");
+
+ALTER TABLE "LedgerEntry" ADD CONSTRAINT "LedgerEntry_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "Vendor"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "LedgerEntry" ADD CONSTRAINT "LedgerEntry_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "Session"("id") ON DELETE SET NULL ON UPDATE CASCADE;

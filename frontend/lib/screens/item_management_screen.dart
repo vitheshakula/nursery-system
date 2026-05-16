@@ -5,6 +5,9 @@ import '../features/inventory/data/inventory_api.dart';
 import '../models/app_user.dart';
 import '../models/category.dart';
 import '../models/item.dart';
+import '../shared/theme/app_theme.dart';
+import '../shared/widgets/app_card.dart';
+import '../shared/widgets/empty_state_widget.dart';
 import '../utils/formatters.dart';
 import 'category_management_screen.dart';
 
@@ -122,6 +125,7 @@ class ItemManagementScreenState extends ConsumerState<ItemManagementScreen> {
     }).toList();
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Items'),
         actions: [
@@ -167,6 +171,14 @@ class ItemManagementScreenState extends ConsumerState<ItemManagementScreen> {
                     child: ChoiceChip(
                       label: const Text('All'),
                       selected: _selectedCategoryId == 'all',
+                      selectedColor: AppColors.primary,
+                      backgroundColor: const Color(0xFFEDEFED),
+                      labelStyle: TextStyle(
+                        color: _selectedCategoryId == 'all'
+                            ? Colors.white
+                            : AppColors.text,
+                        fontWeight: FontWeight.w800,
+                      ),
                       onSelected: (_) {
                         setState(() {
                           _selectedCategoryId = 'all';
@@ -180,6 +192,14 @@ class ItemManagementScreenState extends ConsumerState<ItemManagementScreen> {
                       child: ChoiceChip(
                         label: Text(category.name),
                         selected: _selectedCategoryId == category.id,
+                        selectedColor: AppColors.primary,
+                        backgroundColor: const Color(0xFFEDEFED),
+                        labelStyle: TextStyle(
+                          color: _selectedCategoryId == category.id
+                              ? Colors.white
+                              : AppColors.text,
+                          fontWeight: FontWeight.w800,
+                        ),
                         onSelected: (_) {
                           setState(() {
                             _selectedCategoryId = category.id;
@@ -198,7 +218,18 @@ class ItemManagementScreenState extends ConsumerState<ItemManagementScreen> {
                   : _error != null
                       ? _StateMessage(message: _error!, onRetry: _loadData)
                       : filtered.isEmpty
-                          ? const _StateMessage(message: 'No items available.')
+                          ? EmptyStateWidget(
+                              title: 'No items available',
+                              message:
+                                  'Add plants and prices so sessions stay fast.',
+                              icon: Icons.inventory_2_outlined,
+                              actionLabel: widget.currentUser.isAdmin
+                                  ? 'Add Item'
+                                  : null,
+                              onAction: widget.currentUser.isAdmin
+                                  ? _showItemSheet
+                                  : null,
+                            )
                           : ListView.separated(
                               itemCount: filtered.length,
                               separatorBuilder: (_, __) =>
@@ -214,53 +245,51 @@ class ItemManagementScreenState extends ConsumerState<ItemManagementScreen> {
                                     )
                                     .name;
 
-                                return Card(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(16),
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          width: 52,
-                                          height: 52,
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFDDECCF),
-                                            borderRadius:
-                                                BorderRadius.circular(16),
-                                          ),
-                                          child: const Icon(
-                                              Icons.inventory_2_outlined),
+                                return AppCard(
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 48,
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primarySoft,
+                                          borderRadius:
+                                              BorderRadius.circular(12),
                                         ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(item.name,
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .titleMedium),
-                                              const SizedBox(height: 6),
-                                              Wrap(
-                                                spacing: 8,
-                                                runSpacing: 8,
-                                                children: [
-                                                  _InfoPill(
-                                                      label: categoryName),
+                                        child: const Icon(
+                                          Icons.inventory_2_outlined,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(item.name,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .titleMedium),
+                                            const SizedBox(height: 6),
+                                            Wrap(
+                                              spacing: 8,
+                                              runSpacing: 8,
+                                              children: [
+                                                _InfoPill(label: categoryName),
+                                                _InfoPill(
+                                                    label:
+                                                        'Vendor ${formatCurrency(item.vendorPrice)}'),
+                                                if (item.retailPrice != null)
                                                   _InfoPill(
                                                       label:
-                                                          'Vendor ${formatCurrency(item.vendorPrice)}'),
-                                                  if (item.retailPrice != null)
-                                                    _InfoPill(
-                                                        label:
-                                                            'Retail ${formatCurrency(item.retailPrice!)}'),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
+                                                          'Retail ${formatCurrency(item.retailPrice!)}'),
+                                              ],
+                                            ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
                                 );
                               },
@@ -433,11 +462,17 @@ class _InfoPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F5EA),
+        color: AppColors.primarySoft,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(label,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: AppColors.primaryDark,
+        ),
+      ),
     );
   }
 }

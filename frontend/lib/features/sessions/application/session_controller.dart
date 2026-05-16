@@ -1,12 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../models/active_session.dart';
 import '../../../models/category.dart';
 import '../../../models/item.dart';
 import '../../../models/session_close_result.dart';
 import '../../../models/session_info.dart';
 import '../../../models/session_summary.dart';
 import '../../auth/presentation/auth_provider.dart';
+import '../../../core/sync/sync_engine.dart';
 import '../data/session_api.dart';
+import '../data/session_repository.dart';
 
 enum SessionMode {
   issue,
@@ -81,25 +84,76 @@ class SessionState {
 }
 
 final sessionApiProvider = Provider<SessionApi>((ref) {
-  return SessionApi(ref.watch(apiClientProvider));
+  return SessionApi(
+    ref.watch(apiClientProvider),
+    queue: ref.watch(operationQueueProvider),
+    cache: ref.watch(offlineCacheProvider),
+  );
+});
+
+final sessionRepositoryProvider = Provider<SessionRepository>((ref) {
+  return SessionRepository(
+    remote: ref.watch(sessionApiProvider),
+    queue: ref.watch(operationQueueProvider),
+  );
+});
+
+final activeSessionsProvider = FutureProvider<List<ActiveSession>>((ref) {
+  return ref.watch(sessionApiProvider).getActiveSessions();
+});
+
+final sessionDetailProvider =
+    FutureProvider.family<SessionSummary, String>((ref, sessionId) {
+  return ref.watch(sessionApiProvider).getSessionSummary(sessionId);
+});
+
+final createSessionProvider = Provider<SessionCommandController>((ref) {
+  return SessionCommandController(ref);
+});
+
+final closeSessionProvider = Provider<SessionCommandController>((ref) {
+  return SessionCommandController(ref);
 });
 
 final sessionControllerProvider = StateNotifierProvider.autoDispose
     .family<SessionController, SessionState, SessionInfo>((ref, session) {
   return SessionController(
     sessionApi: ref.watch(sessionApiProvider),
+    sessionRepository: ref.watch(sessionRepositoryProvider),
     initialSession: session,
   );
 });
 
+class SessionCommandController {
+  const SessionCommandController(this._ref);
+
+  final Ref _ref;
+
+  Future<SessionInfo> create(String vendorId) async {
+    final session = await _ref.read(sessionApiProvider).startSession(vendorId);
+    _ref.invalidate(activeSessionsProvider);
+    return session;
+  }
+
+  Future<SessionCloseResult> close(String sessionId) async {
+    final result = await _ref.read(sessionApiProvider).closeSession(sessionId);
+    _ref.invalidate(activeSessionsProvider);
+    _ref.invalidate(sessionDetailProvider(sessionId));
+    return result;
+  }
+}
+
 class SessionController extends StateNotifier<SessionState> {
   SessionController({
     required SessionApi sessionApi,
+    required SessionRepository sessionRepository,
     required SessionInfo initialSession,
   })  : _sessionApi = sessionApi,
+        _sessionRepository = sessionRepository,
         super(SessionState(session: initialSession));
 
   final SessionApi _sessionApi;
+  final SessionRepository _sessionRepository;
 
   Future<void> loadData() async {
     state = state.copyWith(isLoading: true, clearError: true);
@@ -194,12 +248,12 @@ class SessionController extends StateNotifier<SessionState> {
 
     try {
       if (mode == SessionMode.issue) {
-        await _sessionApi.submitIssueItems(
+        await _sessionRepository.issueItems(
           sessionId: state.session.id,
           quantities: selected,
         );
       } else {
-        await _sessionApi.submitReturnItems(
+        await _sessionRepository.returnItems(
           sessionId: state.session.id,
           quantities: selected,
         );

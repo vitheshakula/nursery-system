@@ -5,6 +5,7 @@ import {
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsPositive,
   IsString,
   ValidateNested,
@@ -26,6 +27,10 @@ export class CreateReturnItemDto {
 }
 
 export class ReturnItemsDto {
+  @IsOptional()
+  @IsString()
+  requestId?: string;
+
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

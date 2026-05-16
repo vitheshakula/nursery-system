@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { DomainErrorCode } from '../errors/domain-error';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -21,45 +22,80 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    const errorMessage = this.getErrorMessage(exception);
+    const { code, message } = this.getErrorDetails(exception);
 
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
-      this.logger.error(errorMessage, exception instanceof Error ? exception.stack : undefined);
+      this.logger.error(message, exception instanceof Error ? exception.stack : undefined);
     }
 
     response.status(status).json({
       success: false,
-      error: errorMessage,
+      code,
+      message,
     });
   }
 
-  private getErrorMessage(exception: unknown) {
+  private getErrorDetails(exception: unknown) {
     if (exception instanceof HttpException) {
-      const response = exception.getResponse();
+      const exceptionResponse = exception.getResponse();
 
-      if (typeof response === 'string') {
-        return response;
+      if (typeof exceptionResponse === 'string') {
+        return {
+          code: this.statusToCode(exception.getStatus()),
+          message: exceptionResponse,
+        };
       }
 
-      if (typeof response === 'object' && response !== null) {
-        const message = (response as { message?: string | string[] }).message;
+      if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
+        const body = exceptionResponse as {
+          code?: string;
+          message?: string | string[];
+        };
+        const message = body.message;
 
         if (Array.isArray(message)) {
-          return message.join(', ');
+          return {
+            code: body.code ?? this.statusToCode(exception.getStatus()),
+            message: message.join(', '),
+          };
         }
 
         if (typeof message === 'string') {
-          return message;
+          return {
+            code: body.code ?? this.statusToCode(exception.getStatus()),
+            message,
+          };
         }
       }
 
-      return exception.message;
+      return {
+        code: this.statusToCode(exception.getStatus()),
+        message: exception.message,
+      };
     }
 
     if (exception instanceof Error) {
-      return exception.message;
+      return {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: exception.message,
+      };
     }
 
-    return 'Internal server error';
+    return {
+      code: 'INTERNAL_SERVER_ERROR',
+      message: 'Internal server error',
+    };
+  }
+
+  private statusToCode(status: number) {
+    if (status === HttpStatus.NOT_FOUND) {
+      return DomainErrorCode.NotFound;
+    }
+
+    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      return 'INTERNAL_SERVER_ERROR';
+    }
+
+    return 'REQUEST_FAILED';
   }
 }

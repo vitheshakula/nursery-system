@@ -1,4 +1,9 @@
 import '../../../core/network/api_client.dart';
+import '../../../core/network/api_exception.dart';
+import '../../../core/offline/offline_cache_repository.dart';
+import '../../../core/offline/operation_queue.dart';
+import '../../../core/offline/operation_queue_repository.dart';
+import '../../../models/active_session.dart';
 import '../../../models/category.dart';
 import '../../../models/item.dart';
 import '../../../models/session_close_result.dart';
@@ -6,9 +11,24 @@ import '../../../models/session_info.dart';
 import '../../../models/session_summary.dart';
 
 class SessionApi {
-  const SessionApi(this._apiClient);
+  const SessionApi(this._apiClient, {this.queue, this.cache});
 
   final ApiClient _apiClient;
+  final OperationQueueRepository? queue;
+  final OfflineCacheRepository? cache;
+
+  Future<List<ActiveSession>> getActiveSessions() async {
+    const cacheKey = 'activeSessions';
+    try {
+    final data = await _apiClient.get('/sessions/active');
+    final rows = _list(data);
+    await cache?.cacheList(cacheKey, rows);
+    return rows.map(ActiveSession.fromJson).toList();
+    } on ApiException catch (error) {
+      if (error.type != ApiExceptionType.network || cache == null) rethrow;
+      return (await cache!.readList(cacheKey)).map(ActiveSession.fromJson).toList();
+    }
+  }
 
   Future<SessionInfo> startSession(String vendorId) async {
     final data = await _apiClient.post(
@@ -22,9 +42,19 @@ class SessionApi {
     required String sessionId,
     required Map<String, int> quantities,
   }) async {
+    await submitIssueItemsWithPayload(
+      sessionId: sessionId,
+      payload: buildIssuePayload(quantities),
+    );
+  }
+
+  Future<void> submitIssueItemsWithPayload({
+    required String sessionId,
+    required Map<String, dynamic> payload,
+  }) async {
     await _apiClient.post(
       '/sessions/$sessionId/issue',
-      body: {'items': _buildItems(quantities)},
+      body: payload,
     );
   }
 
@@ -32,16 +62,19 @@ class SessionApi {
     required String sessionId,
     required Map<String, int> quantities,
   }) async {
+    await submitReturnItemsWithPayload(
+      sessionId: sessionId,
+      payload: buildReturnPayload(quantities),
+    );
+  }
+
+  Future<void> submitReturnItemsWithPayload({
+    required String sessionId,
+    required Map<String, dynamic> payload,
+  }) async {
     await _apiClient.post(
       '/sessions/$sessionId/return',
-      body: {
-        'items': _buildItems(quantities)
-            .map((item) => {
-                  ...item,
-                  'condition': 'GOOD',
-                })
-            .toList(),
-      },
+      body: payload,
     );
   }
 
@@ -51,18 +84,61 @@ class SessionApi {
   }
 
   Future<SessionCloseResult> closeSession(String sessionId) async {
-    final data = await _apiClient.post('/sessions/$sessionId/close');
+    final requestId = createOperationId();
+    final payload = {'requestId': requestId};
+    
+    try {
+    final data = await _apiClient.post(
+      '/sessions/$sessionId/close',
+      body: payload,
+    );
     return SessionCloseResult.fromJson(_map(data));
+    } on ApiException catch (error) {
+      if (error.type != ApiExceptionType.network || queue == null) {
+        rethrow;
+      }
+
+      await queue!.enqueue(
+        type: QueuedOperationType.closeSession,
+        endpoint: '/sessions/$sessionId/close',
+        method: 'POST',
+        payload: payload,
+      );
+
+      return SessionCloseResult(
+        sessionId: sessionId,
+        status: 'QUEUED',
+        totalBill: 0,
+        totalSold: 0,
+        vendorBalance: 0,
+      );
+    }
   }
 
   Future<List<Item>> getItems({int limit = 200}) async {
+    final cacheKey = 'plants:$limit';
+    try {
     final data = await _apiClient.get('/plants?page=1&limit=$limit');
-    return _list(data).map(Item.fromJson).toList();
+    final rows = _list(data);
+    await cache?.cacheList(cacheKey, rows);
+    return rows.map(Item.fromJson).toList();
+    } on ApiException catch (error) {
+      if (error.type != ApiExceptionType.network || cache == null) rethrow;
+      return (await cache!.readList(cacheKey)).map(Item.fromJson).toList();
+    }
   }
 
   Future<List<Category>> getCategories() async {
+    const cacheKey = 'categories';
+    try {
     final data = await _apiClient.get('/categories');
-    return _list(data).map(Category.fromJson).toList();
+    final rows = _list(data);
+    await cache?.cacheList(cacheKey, rows);
+    return rows.map(Category.fromJson).toList();
+    } on ApiException catch (error) {
+      if (error.type != ApiExceptionType.network || cache == null) rethrow;
+      return (await cache!.readList(cacheKey)).map(Category.fromJson).toList();
+    }
   }
 
   List<Map<String, dynamic>> _buildItems(Map<String, int> quantities) {
@@ -73,6 +149,25 @@ class SessionApi {
               'quantity': entry.value,
             })
         .toList();
+  }
+
+  Map<String, dynamic> buildIssuePayload(Map<String, int> quantities) {
+    return {
+      'requestId': createOperationId(),
+      'items': _buildItems(quantities),
+    };
+  }
+
+  Map<String, dynamic> buildReturnPayload(Map<String, int> quantities) {
+    return {
+      'requestId': createOperationId(),
+      'items': _buildItems(quantities)
+          .map((item) => {
+                ...item,
+                'condition': 'GOOD',
+              })
+          .toList(),
+    };
   }
 
   Map<String, dynamic> _map(Object? value) {

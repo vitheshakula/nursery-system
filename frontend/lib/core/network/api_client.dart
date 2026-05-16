@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:http/http.dart' as http;
 
@@ -7,6 +8,11 @@ import 'api_exception.dart';
 
 typedef TokenProvider = Future<String?> Function();
 typedef UnauthorizedCallback = Future<void> Function();
+
+String createOperationId() {
+  final random = Random.secure().nextInt(1 << 32);
+  return '${DateTime.now().microsecondsSinceEpoch}-$random';
+}
 
 class ApiClient {
   ApiClient({
@@ -62,6 +68,19 @@ class ApiClient {
     );
   }
 
+  Future<Object?> patch(
+    String path, {
+    Map<String, dynamic>? body,
+    bool attachAuth = true,
+  }) {
+    return _request(
+      method: 'PATCH',
+      path: path,
+      body: body,
+      attachAuth: attachAuth,
+    );
+  }
+
   Future<Object?> delete(String path, {bool attachAuth = true}) {
     return _request(method: 'DELETE', path: path, attachAuth: attachAuth);
   }
@@ -90,6 +109,10 @@ class ApiClient {
           response =
               await _client.put(uri, headers: headers, body: encodedBody);
           break;
+        case 'PATCH':
+          response =
+              await _client.patch(uri, headers: headers, body: encodedBody);
+          break;
         case 'DELETE':
           response = await _client.delete(uri, headers: headers);
           break;
@@ -112,6 +135,7 @@ class ApiClient {
   Future<Map<String, String>> _headers({required bool attachAuth}) async {
     final headers = <String, String>{
       'Content-Type': 'application/json',
+      'x-correlation-id': createOperationId(),
     };
 
     if (attachAuth) {
@@ -133,8 +157,9 @@ class ApiClient {
       final payload = _tryDecodePayload(response);
       throw ApiException(
         message: _errorMessage(payload),
+        code: _errorCode(payload),
         statusCode: response.statusCode,
-        error: payload['error'],
+        error: payload,
         type: ApiExceptionType.auth,
       );
     }
@@ -149,8 +174,9 @@ class ApiClient {
 
     throw ApiException(
       message: _errorMessage(payload),
+      code: _errorCode(payload),
       statusCode: response.statusCode,
-      error: payload['error'],
+      error: payload,
     );
   }
 
@@ -158,7 +184,8 @@ class ApiClient {
     if (response.body.isEmpty) {
       return {
         'success': false,
-        'error': 'Empty response from server.',
+        'code': 'EMPTY_RESPONSE',
+        'message': 'Empty response from server.',
       };
     }
 
@@ -194,7 +221,8 @@ class ApiClient {
     } on ApiException {
       return {
         'success': false,
-        'error': 'Please login again.',
+        'code': 'UNAUTHORIZED',
+        'message': 'Please login again.',
       };
     }
   }
@@ -211,11 +239,21 @@ class ApiClient {
   }
 
   String _errorMessage(Map<String, dynamic> payload) {
+    final message = payload['message'];
+    if (message is String && message.isNotEmpty) {
+      return message;
+    }
+
     final error = payload['error'];
     if (error is String && error.isNotEmpty) {
       return error;
     }
 
     return 'Request failed.';
+  }
+
+  String? _errorCode(Map<String, dynamic> payload) {
+    final code = payload['code'];
+    return code is String && code.isNotEmpty ? code : null;
   }
 }

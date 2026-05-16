@@ -6,8 +6,8 @@ import '../models/category.dart';
 import '../models/item.dart';
 import '../models/session_info.dart';
 import '../models/vendor.dart';
+import '../shared/theme/app_theme.dart';
 import '../utils/formatters.dart';
-import 'settlement_screen.dart';
 import 'summary_screen.dart';
 
 class SessionScreen extends ConsumerStatefulWidget {
@@ -97,7 +97,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Close Session'),
-            content: const Text('Move to settlement for this vendor?'),
+            content: const Text(
+              'This will add the session balance to the vendor pending balance.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
@@ -122,25 +124,13 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         return;
       }
 
-      final settled = await Navigator.of(context).push<bool>(
-        MaterialPageRoute(
-          builder: (_) => SettlementScreen(
-            vendor: widget.vendor,
-            sessionId: widget.session.id,
-            totalBill: closeResult.totalBill,
-            previousBalance: widget.vendor.balance,
-            newBalance: closeResult.vendorBalance,
-          ),
-        ),
+      ref.invalidate(activeSessionsProvider);
+      ref.invalidate(sessionDetailProvider(widget.session.id));
+
+      _showMessage(
+        'Session closed. ${formatCurrency(closeResult.totalBill)} added to pending.',
       );
-
-      if (!mounted) {
-        return;
-      }
-
-      if (settled == true) {
-        Navigator.of(context).pop(true);
-      }
+      Navigator.of(context).pop(true);
     } catch (error) {
       _showMessage(error.toString());
     }
@@ -165,6 +155,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     }).toList();
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(widget.vendor.name),
         actions: [
@@ -191,9 +182,13 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Session active for ${widget.vendor.name}',
+                                    widget.vendor.name,
                                     style:
                                         Theme.of(context).textTheme.titleLarge,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  const _SessionStatusPill(
+                                    label: 'In Progress',
                                   ),
                                   const SizedBox(height: 12),
                                   SegmentedButton<SessionMode>(
@@ -430,6 +425,33 @@ class _QuantityStepper extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SessionStatusPill extends StatelessWidget {
+  const _SessionStatusPill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: AppColors.primarySoft,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w800,
+              ),
+        ),
       ),
     );
   }

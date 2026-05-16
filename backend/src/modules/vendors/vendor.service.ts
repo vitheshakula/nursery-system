@@ -122,4 +122,34 @@ export class VendorService {
       };
     });
   }
+
+  async getLedgerHistory(vendorId: string, limit = 100) {
+    await this.findOne(vendorId);
+
+    return this.prisma.ledgerEntry.findMany({
+      where: { vendorId },
+      include: {
+        session: {
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+            closedAt: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.max(1, Math.min(limit, 500)),
+    });
+  }
+
+  async getPaymentTimeline(vendorId: string, limit = 100) {
+    await this.findOne(vendorId);
+
+    return this.prisma.payment.findMany({
+      where: { vendorId },
+      orderBy: { createdAt: 'desc' },
+      take: Math.max(1, Math.min(limit, 500)),
+    });
+  }
 }

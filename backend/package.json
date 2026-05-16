@@ -6,6 +6,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "build": "nest build",
+    "test": "node --test test",
     "format": "prettier --write \"src/**/*.ts\" \"prisma/**/*.prisma\"",
     "lint": "eslint \"src/**/*.ts\" --fix",
     "prisma:generate": "prisma generate",
