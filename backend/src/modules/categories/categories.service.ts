@@ -1,34 +1,24 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { Prisma, Category } from '@prisma/client';
+import { Injectable } from '@nestjs/common';
+import { Category } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
-import { CreateCategoryDto } from './dto/create-category.dto';
+import { DomainError } from '../../common/errors/domain-error';
+import { CreateCategoryDto } from './dto/category.dto';
 
 @Injectable()
 export class CategoriesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(createCategoryDto: CreateCategoryDto): Promise<Category> {
-    try {
-      return await this.prisma.category.create({
-        data: createCategoryDto,
-      });
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002' &&
-        Array.isArray(error.meta?.target) &&
-        error.meta.target.includes('name')
-      ) {
-        throw new BadRequestException('Category name must be unique');
-      }
-
-      throw error;
-    }
+  create(dto: CreateCategoryDto): Promise<Category> {
+    return this.prisma.category.create({ data: { name: dto.name } });
   }
 
-  async findAll(): Promise<Category[]> {
-    return this.prisma.category.findMany({
-      orderBy: { name: 'asc' },
-    });
+  findAll(): Promise<Category[]> {
+    return this.prisma.category.findMany({ orderBy: { name: 'asc' } });
+  }
+
+  async findOne(id: string): Promise<Category> {
+    const category = await this.prisma.category.findUnique({ where: { id } });
+    if (!category) throw DomainError.notFound('Category', id);
+    return category;
   }
 }

@@ -1,118 +1,426 @@
+// ============================================================================
+// Nursery Vendor Inventory & Settlement System
+// ----------------------------------------------------------------------------
+// Domain model (rebuilt). Core principles:
+//   1. Vendor balance is DERIVED from VendorLedger. `currentBalance` is a
+//      denormalized cache, written only inside the same DB transaction that
+//      appends a ledger entry. It is never edited directly by any API.
+//   2. Inventory stock mirrors the same pattern: `InventoryStock.quantityOnHand`
+//      is a cache over the append-only `InventoryMovement` log.
+//   3. Issue / Return / Settlement are first-class, numbered transactions.
+//      A Settlement is immutable once FINALIZED.
+//   4. Every financially or operationally significant action writes an AuditLog.
+// ============================================================================
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled (PgBouncer) — used by the app at runtime
+  directUrl = env("DIRECT_URL") // unpooled — used by Prisma Migrate
 }
+
+// ---------------------------------------------------------------------------
+// Identity & access
+// ---------------------------------------------------------------------------
 
 model User {
   id        String   @id @default(uuid())
   name      String
   email     String   @unique
-  password  String
-  role      Role
+  phone     String?
+  password  String // bcrypt hash
+  role      Role     @default(STAFF)
+  active    Boolean  @default(true)
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+  issues        IssueTransaction[]
+  returns       ReturnTransaction[]
+  settlements   Settlement[]
+  payments      Payment[]
+  ledgerEntries VendorLedger[]
+  movements     InventoryMovement[]
+  auditLogs     AuditLog[]
+
+  @@index([role])
+  @@index([active])
 }
+
+// Revocable refresh tokens. Deactivating a user revokes all of theirs, which
+// kills their ability to mint new access tokens.
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique // sha-256 of the opaque refresh token
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Vendors
+// ---------------------------------------------------------------------------
 
 model Vendor {
-  id        String   @id @default(uuid())
-  name      String
-  phone     String
-  balance   Float    @default(0)
-  createdAt DateTime @default(now())
+  id             String   @id @default(uuid())
+  vendorCode     String   @unique // e.g. VEN-0001
+  name           String
+  phone          String?
+  address        String?
+  notes          String?
+  active         Boolean  @default(true)
+  openingBalance Decimal  @default(0) @db.Decimal(12, 2)
+  // Denormalized cache = openingBalance + Σ(debit) − Σ(credit) over ledger.
+  // Written only alongside a VendorLedger insert, inside one transaction.
+  currentBalance Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  sessions  Session[]
-  payments  Payment[]
+  issues        IssueTransaction[]
+  returns       ReturnTransaction[]
+  settlements   Settlement[]
+  payments      Payment[]
+  ledgerEntries VendorLedger[]
+
+  @@index([active])
+  @@index([name])
 }
+
+// ---------------------------------------------------------------------------
+// Inventory catalog & stock
+// ---------------------------------------------------------------------------
 
 model Category {
-  id     String  @id @default(uuid())
-  name   String  @unique
+  id        String   @id @default(uuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
 
-  plants Plant[]
+  items InventoryItem[]
 }
 
-model Plant {
+model InventoryItem {
   id           String   @id @default(uuid())
+  sku          String   @unique // e.g. PLT-0001
   name         String
   categoryId   String
-  vendorPrice  Float
-  retailPrice  Float?
+  unit         String   @default("unit") // piece, bag, kg, ...
+  costPrice    Decimal  @db.Decimal(12, 2)
+  sellingPrice Decimal  @db.Decimal(12, 2)
+  reorderLevel Int      @default(0)
+  active       Boolean  @default(true)
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   category Category @relation(fields: [categoryId], references: [id])
 
+  stock       InventoryStock?
+  movements   InventoryMovement[]
   issueItems  IssueItem[]
   returnItems ReturnItem[]
+  settleItems SettlementItem[]
+
+  @@index([categoryId])
+  @@index([active])
+  @@index([name])
 }
 
-model Session {
-  id        String        @id @default(uuid())
-  vendorId  String
-  status    SessionStatus @default(ACTIVE)
-  createdAt DateTime      @default(now())
-  closedAt  DateTime?
+// 1:1 mutable stock level. Cache over InventoryMovement.
+model InventoryStock {
+  id             String   @id @default(uuid())
+  itemId         String   @unique
+  quantityOnHand Int      @default(0)
+  updatedAt      DateTime @updatedAt
+
+  item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+}
+
+// Append-only audit trail of every stock change. Source of truth for stock.
+model InventoryMovement {
+  id            String       @id @default(uuid())
+  itemId        String
+  type          MovementType
+  quantityDelta Int // signed: +in / -out
+  balanceAfter  Int // resulting quantityOnHand
+  referenceType String? // ISSUE_TXN | RETURN_TXN | ADJUSTMENT | INITIAL
+  referenceId   String?
+  notes         String?
+  performedById String?
+  createdAt     DateTime     @default(now())
+
+  item        InventoryItem @relation(fields: [itemId], references: [id])
+  performedBy User?         @relation(fields: [performedById], references: [id])
+
+  @@index([itemId])
+  @@index([referenceType, referenceId])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Issue (morning)
+// ---------------------------------------------------------------------------
+
+model IssueTransaction {
+  id                String      @id @default(uuid())
+  transactionNumber String      @unique // ISS-YYYYMMDD-0001
+  vendorId          String
+  staffId           String
+  status            IssueStatus @default(OPEN)
+  notes             String?
+  issuedAt          DateTime    @default(now())
+  createdAt         DateTime    @default(now())
 
   vendor Vendor @relation(fields: [vendorId], references: [id])
+  staff  User   @relation(fields: [staffId], references: [id])
 
-  issueItems  IssueItem[]
-  returnItems ReturnItem[]
-  payments    Payment[]
+  items      IssueItem[]
+  returns    ReturnTransaction[]
+  settlement Settlement?
+
+  @@index([vendorId])
+  @@index([status])
+  @@index([issuedAt])
 }
 
 model IssueItem {
-  id        String   @id @default(uuid())
-  sessionId String
-  plantId   String
-  quantity  Int
-  createdAt DateTime @default(now())
+  id                   String  @id @default(uuid())
+  issueTransactionId   String
+  itemId               String
+  quantityIssued       Int
+  sellingPriceSnapshot Decimal @db.Decimal(12, 2) // price frozen at issue time
 
-  session Session @relation(fields: [sessionId], references: [id])
-  plant   Plant   @relation(fields: [plantId], references: [id])
+  issueTransaction IssueTransaction @relation(fields: [issueTransactionId], references: [id], onDelete: Cascade)
+  item             InventoryItem    @relation(fields: [itemId], references: [id])
+
+  @@unique([issueTransactionId, itemId])
+  @@index([itemId])
+}
+
+// ---------------------------------------------------------------------------
+// Return (evening) — references the originating issue
+// ---------------------------------------------------------------------------
+
+model ReturnTransaction {
+  id                 String   @id @default(uuid())
+  returnNumber       String   @unique // RET-YYYYMMDD-0001
+  issueTransactionId String
+  vendorId           String
+  staffId            String
+  notes              String?
+  returnedAt         DateTime @default(now())
+  createdAt          DateTime @default(now())
+
+  issueTransaction IssueTransaction @relation(fields: [issueTransactionId], references: [id])
+  vendor           Vendor           @relation(fields: [vendorId], references: [id])
+  staff            User             @relation(fields: [staffId], references: [id])
+
+  items ReturnItem[]
+
+  @@index([issueTransactionId])
+  @@index([vendorId])
+  @@index([returnedAt])
 }
 
 model ReturnItem {
-  id        String   @id @default(uuid())
-  sessionId String
-  plantId   String
-  quantity  Int
-  condition PlantCondition
-  createdAt DateTime @default(now())
+  id                  String @id @default(uuid())
+  returnTransactionId String
+  itemId              String
+  quantityReturned    Int
 
-  session Session @relation(fields: [sessionId], references: [id])
-  plant   Plant   @relation(fields: [plantId], references: [id])
+  returnTransaction ReturnTransaction @relation(fields: [returnTransactionId], references: [id], onDelete: Cascade)
+  item              InventoryItem     @relation(fields: [itemId], references: [id])
+
+  @@index([itemId])
 }
+
+// ---------------------------------------------------------------------------
+// Settlement — immutable once FINALIZED
+// ---------------------------------------------------------------------------
+
+model Settlement {
+  id                 String           @id @default(uuid())
+  settlementNumber   String           @unique // STL-YYYYMMDD-0001
+  issueTransactionId String           @unique // one settlement per issue cycle
+  vendorId           String
+  staffId            String
+  status             SettlementStatus @default(DRAFT)
+  totalAmount        Decimal          @default(0) @db.Decimal(12, 2)
+  totalSoldItems     Int              @default(0)
+  notes              String?
+  finalizedAt        DateTime?
+  createdAt          DateTime         @default(now())
+
+  issueTransaction IssueTransaction @relation(fields: [issueTransactionId], references: [id])
+  vendor           Vendor           @relation(fields: [vendorId], references: [id])
+  staff            User             @relation(fields: [staffId], references: [id])
+
+  items SettlementItem[]
+
+  @@index([vendorId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model SettlementItem {
+  id               String  @id @default(uuid())
+  settlementId     String
+  itemId           String
+  quantityIssued   Int
+  quantityReturned Int
+  quantitySold     Int
+  sellingPrice     Decimal @db.Decimal(12, 2)
+  lineTotal        Decimal @db.Decimal(12, 2)
+
+  settlement Settlement    @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  item       InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@index([settlementId])
+  @@index([itemId])
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
 
 model Payment {
+  id            String        @id @default(uuid())
+  paymentNumber String        @unique // PAY-YYYYMMDD-0001
+  vendorId      String
+  staffId       String
+  amount        Decimal       @db.Decimal(12, 2)
+  method        PaymentMethod
+  notes         String?
+  paidAt        DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+  staff  User   @relation(fields: [staffId], references: [id])
+
+  @@index([vendorId])
+  @@index([paidAt])
+}
+
+// ---------------------------------------------------------------------------
+// Vendor ledger — the financial source of truth (bank statement)
+// ---------------------------------------------------------------------------
+
+model VendorLedger {
+  id              String          @id @default(uuid())
+  vendorId        String
+  type            LedgerEntryType
+  referenceNumber String? // settlementNumber / paymentNumber / txn number
+  referenceType   String? // SETTLEMENT | PAYMENT | ISSUE_TXN | RETURN_TXN | ADJUSTMENT
+  referenceId     String?
+  debit           Decimal         @default(0) @db.Decimal(12, 2) // increases vendor owed
+  credit          Decimal         @default(0) @db.Decimal(12, 2) // decreases vendor owed
+  balanceAfter    Decimal         @db.Decimal(12, 2) // running balance after this entry
+  notes           String?
+  createdById     String?
+  createdAt       DateTime        @default(now())
+
+  vendor    Vendor @relation(fields: [vendorId], references: [id])
+  createdBy User?  @relation(fields: [createdById], references: [id])
+
+  @@index([vendorId, createdAt])
+  @@index([type])
+  @@index([referenceType, referenceId])
+}
+
+// ---------------------------------------------------------------------------
+// Audit log — every critical action
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String // CREATE | UPDATE | DEACTIVATE | ISSUE | RETURN | SETTLE | PAY | ADJUST
+  module     String // VENDOR | INVENTORY | ISSUE | RETURN | SETTLEMENT | PAYMENT | USER
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([module])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Atomic human-readable numbering (ISS-/RET-/STL-/PAY-/VEN-/PLT-)
+// Row is locked + incremented inside the same transaction as the entity insert.
+// ---------------------------------------------------------------------------
+
+model Counter {
+  key   String @id // e.g. "ISSUE:20260620", "VENDOR"
+  value Int    @default(0)
+}
+
+// ---------------------------------------------------------------------------
+// Idempotency — dedupes retried mutating requests (offline sync replays).
+// A client sends a stable key; the first call records the result, replays
+// return the cached result instead of re-processing.
+// ---------------------------------------------------------------------------
+
+model IdempotencyRecord {
   id        String   @id @default(uuid())
-  vendorId  String
-  sessionId String?
-  amount    Float
-  mode      PaymentMode
+  key       String   @unique // client-supplied idempotency key
+  scope     String // ISSUE | RETURN | SETTLEMENT | PAYMENT
+  status    String   @default("COMPLETED") // IN_PROGRESS | COMPLETED
+  result    Json? // cached response payload
   createdAt DateTime @default(now())
 
-  vendor  Vendor  @relation(fields: [vendorId], references: [id])
-  session Session? @relation(fields: [sessionId], references: [id])
+  @@index([createdAt])
 }
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
 
 enum Role {
   ADMIN
   STAFF
 }
 
-enum SessionStatus {
-  ACTIVE
-  CLOSED
-}
-
-enum PaymentMode {
+enum PaymentMethod {
   CASH
   UPI
+  BANK_TRANSFER
 }
 
-enum PlantCondition {
-  GOOD
-  DAMAGED
+enum LedgerEntryType {
+  INVENTORY_ISSUED
+  INVENTORY_RETURNED
+  SETTLEMENT
+  PAYMENT
+  ADJUSTMENT
+}
+
+enum MovementType {
+  INITIAL
+  ISSUE
+  RETURN
+  ADJUSTMENT
+}
+
+enum IssueStatus {
+  OPEN
+  PARTIALLY_RETURNED
+  SETTLED
+  CANCELLED
+}
+
+enum SettlementStatus {
+  DRAFT
+  FINALIZED
 }

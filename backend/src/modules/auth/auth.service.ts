@@ -1,61 +1,53 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { Role, User } from '@prisma/client';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../config/prisma.service';
+import { AuthResponseDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
+import { TokenService } from './token.service';
+import { RefreshTokenPayload } from './types/jwt-payload';
 
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name);
-
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwtService: JwtService,
+    private readonly tokens: TokenService,
   ) {}
 
-  async login(loginDto: LoginDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: loginDto.email },
-    });
-
-    if (!user) {
+  async login(dto: LoginDto): Promise<AuthResponseDto> {
+    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    if (!user || !(await bcrypt.compare(dto.password, user.password))) {
       throw new UnauthorizedException('Invalid email or password');
     }
-
-    const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
-
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid email or password');
+    if (!user.active) {
+      throw new UnauthorizedException('Account is deactivated');
     }
 
-    const payload = {
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-      name: user.name,
-    };
-
-    const accessToken = await this.jwtService.signAsync(payload);
-
-    this.logger.log(`User logged in: userId=${user.id} role=${user.role}`);
-
+    const tokens = await this.tokens.issueTokenPair(user);
     return {
-      accessToken,
-      user: this.toSafeUser(user),
+      ...tokens,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
     };
   }
 
-  async hashPassword(password: string) {
-    return bcrypt.hash(password, 10);
+  /** Rotates the refresh token: the presented one is revoked, a new pair issued. */
+  async refresh(payload: RefreshTokenPayload, rawToken: string): Promise<AuthResponseDto> {
+    const record = await this.tokens.assertRefreshTokenValid(payload, rawToken);
+    if (!record) throw new UnauthorizedException('Invalid or expired refresh token');
+
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user || !user.active) throw new UnauthorizedException('Account is deactivated');
+
+    await this.tokens.revokeToken(record.id);
+    const tokens = await this.tokens.issueTokenPair(user);
+    return {
+      ...tokens,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    };
   }
 
-  private toSafeUser(user: User): { id: string; name: string; email: string; role: Role } {
-    return {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    };
+  async logout(payload: RefreshTokenPayload, rawToken: string): Promise<{ revoked: boolean }> {
+    const record = await this.tokens.assertRefreshTokenValid(payload, rawToken);
+    if (record) await this.tokens.revokeToken(record.id);
+    return { revoked: true };
   }
 }
