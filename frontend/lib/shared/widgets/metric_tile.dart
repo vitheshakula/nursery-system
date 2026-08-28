@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
 import 'app_card.dart';
 
 class MetricTile extends StatelessWidget {
@@ -9,7 +10,7 @@ class MetricTile extends StatelessWidget {
     required this.value,
     required this.icon,
     this.caption,
-    this.accentColor = const Color(0xFF2E6B3D),
+    this.accentColor = AppColors.primary,
   });
 
   final String label;
@@ -21,7 +22,7 @@ class MetricTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -32,7 +33,7 @@ class MetricTile extends StatelessWidget {
                 height: 38,
                 decoration: BoxDecoration(
                   color: accentColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppRadii.md),
                 ),
                 child: Icon(icon, color: accentColor, size: 20),
               ),
@@ -45,7 +46,7 @@ class MetricTile extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: const Color(0xFF17351F),
+                  color: AppColors.text,
                   fontWeight: FontWeight.w800,
                 ),
           ),
@@ -55,7 +56,7 @@ class MetricTile extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFF5E6B63),
+                  color: AppColors.muted,
                   fontWeight: FontWeight.w700,
                 ),
           ),
@@ -66,7 +67,7 @@ class MetricTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF89948D),
+                    color: AppColors.subtle,
                     fontWeight: FontWeight.w600,
                   ),
             ),

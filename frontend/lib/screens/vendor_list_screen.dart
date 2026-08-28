@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/vendors/presentation/vendor_provider.dart';
 import '../models/app_user.dart';
 import '../models/vendor.dart';
+import '../shared/theme/app_theme.dart';
 import '../utils/formatters.dart';
 import 'vendor_detail_screen.dart';
 
@@ -167,7 +168,7 @@ class VendorListScreenState extends ConsumerState<VendorListScreen> {
                           : ListView.separated(
                               itemCount: filtered.length,
                               separatorBuilder: (_, __) =>
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: AppSpacing.sm),
                               itemBuilder: (context, index) {
                                 final vendor = filtered[index];
                                 return Card(
@@ -182,12 +183,17 @@ class VendorListScreenState extends ConsumerState<VendorListScreen> {
                                             width: 52,
                                             height: 52,
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFFDDECCF),
+                                              color: AppColors.surfaceHigh,
+                                              border: Border.all(
+                                                  color: AppColors.line),
                                               borderRadius:
-                                                  BorderRadius.circular(16),
+                                                  BorderRadius.circular(
+                                                      AppRadii.md),
                                             ),
                                             child: const Icon(
-                                                Icons.storefront_outlined),
+                                              Icons.storefront_outlined,
+                                              color: AppColors.primary,
+                                            ),
                                           ),
                                           const SizedBox(width: 12),
                                           Expanded(

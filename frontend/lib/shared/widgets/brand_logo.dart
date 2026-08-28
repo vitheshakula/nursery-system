@@ -18,12 +18,13 @@ class BrandLogo extends StatelessWidget {
       dimension: size,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: showBackground ? Colors.white : Colors.transparent,
+          color: showBackground ? AppColors.surfaceHigh : Colors.transparent,
+          border: showBackground ? Border.all(color: AppColors.line) : null,
           borderRadius: BorderRadius.circular(size * 0.24),
           boxShadow: showBackground
               ? const [
                   BoxShadow(
-                    color: Color(0x18000000),
+                    color: Color(0x33000000),
                     blurRadius: 22,
                     offset: Offset(0, 10),
                   ),
@@ -93,7 +94,7 @@ class _BrandLogoPainter extends CustomPainter {
     canvas.drawPath(rightLeaf, leafFill);
 
     final vein = Paint()
-      ..color = Colors.white.withValues(alpha: 0.88)
+      ..color = AppColors.text.withValues(alpha: 0.88)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.6 * scale
       ..strokeCap = StrokeCap.round;

@@ -133,14 +133,7 @@ class _BrandedSplashBody extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Color(0xFFEAF3E8),
-            Color(0xFFF7F8FA),
-          ],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
+        color: AppColors.background,
       ),
       child: Center(
         child: TweenAnimationBuilder<double>(

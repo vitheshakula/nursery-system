@@ -101,6 +101,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         ],
       ),
       bottomNavigationBar: NavigationBar(
+        animationDuration: const Duration(milliseconds: 240),
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {
           setState(() => _currentIndex = index);
@@ -152,29 +153,47 @@ class _SyncStatusStrip extends ConsumerWidget {
           return const SizedBox.shrink();
         }
 
+        final hasFailures = operations.any(
+          (operation) => operation.status == QueuedOperationStatus.failed,
+        );
+
         return SafeArea(
           bottom: false,
-          child: Material(
-            color: AppColors.primarySoft,
+          child: Container(
+            decoration: BoxDecoration(
+              color: hasFailures
+                  ? AppColors.danger.withValues(alpha: 0.12)
+                  : AppColors.surfaceLow,
+              border: const Border(bottom: BorderSide(color: AppColors.line)),
+            ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.xs,
+              ),
               child: Row(
                 children: [
                   Icon(
-                    syncStatus.isSyncing
-                        ? Icons.sync
-                        : Icons.cloud_queue_outlined,
+                    hasFailures
+                        ? Icons.error_outline
+                        : syncStatus.isSyncing
+                            ? Icons.sync
+                            : Icons.cloud_queue_outlined,
                     size: 18,
-                    color: AppColors.primary,
+                    color: hasFailures ? AppColors.danger : AppColors.primary,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSpacing.xs),
                   Expanded(
                     child: Text(
-                      syncStatus.isSyncing
-                          ? 'Syncing queued work'
-                          : '$pending queued operation${pending == 1 ? '' : 's'}',
+                      hasFailures
+                          ? 'Sync attention required'
+                          : syncStatus.isSyncing
+                              ? 'Syncing queued work'
+                              : '$pending queued operation${pending == 1 ? '' : 's'}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.primaryDark,
+                            color: hasFailures
+                                ? AppColors.danger
+                                : AppColors.muted,
                             fontWeight: FontWeight.w700,
                           ),
                     ),
@@ -182,9 +201,8 @@ class _SyncStatusStrip extends ConsumerWidget {
                   TextButton(
                     onPressed: syncStatus.isSyncing
                         ? null
-                        : () => ref
-                            .read(syncControllerProvider.notifier)
-                            .syncNow(),
+                        : () =>
+                            ref.read(syncControllerProvider.notifier).syncNow(),
                     child: const Text('Sync'),
                   ),
                   IconButton(
@@ -1090,8 +1108,12 @@ class _HeaderIconButtonState extends State<_HeaderIconButton> {
       scale: _pressed ? 0.92 : 1,
       duration: const Duration(milliseconds: 100),
       child: Material(
-        color: Colors.white,
+        color: AppColors.surfaceHigh,
         borderRadius: BorderRadius.circular(AppRadii.control),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.control),
+          side: const BorderSide(color: AppColors.line),
+        ),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadii.control),
           onTap: widget.onPressed,

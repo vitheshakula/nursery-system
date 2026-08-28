@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/payments/data/payment_api.dart';
 import '../models/vendor.dart';
+import '../shared/theme/app_theme.dart';
+import '../shared/widgets/app_card.dart';
+import '../shared/widgets/operational_widgets.dart';
 import '../utils/formatters.dart';
 
 class SettlementScreen extends ConsumerStatefulWidget {
@@ -108,104 +111,131 @@ class _SettlementScreenState extends ConsumerState<SettlementScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final settlementTone = _updatedOutstanding > 0
+        ? OperationalStatusTone.warning
+        : OperationalStatusTone.success;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settlement'),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.screen),
         children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(widget.vendor.name,
-                      style: Theme.of(context).textTheme.headlineSmall),
-                  const SizedBox(height: 12),
-                  _SettlementRow(
-                      label: 'Total bill',
-                      value: formatCurrency(widget.totalBill)),
-                  _SettlementRow(
-                      label: 'Previous balance',
-                      value: formatCurrency(widget.previousBalance)),
-                  _SettlementRow(
-                      label: 'New balance',
-                      value: formatCurrency(widget.newBalance)),
-                ],
-              ),
+          AppCard(
+            color: AppColors.surfaceLow,
+            borderColor: AppColors.lineStrong,
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'VENDOR SETTLEMENT',
+                  style: AppTypography.labelCaps,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  widget.vendor.name,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                OperationalDataRow(
+                  label: 'Total bill',
+                  value: formatCurrency(widget.totalBill),
+                ),
+                OperationalDataRow(
+                  label: 'Previous balance',
+                  value: formatCurrency(widget.previousBalance),
+                ),
+                OperationalDataRow(
+                  label: 'New balance',
+                  value: formatCurrency(widget.newBalance),
+                  valueColor: widget.newBalance > 0
+                      ? AppColors.warning
+                      : AppColors.success,
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _cashController,
-            onChanged: (_) => setState(() {}),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Cash paid',
-              prefixIcon: Icon(Icons.payments_outlined),
+          const SizedBox(height: AppSpacing.md),
+          AppCard(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'PAYMENT CAPTURE',
+                  style: AppTypography.labelCaps,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                TextField(
+                  controller: _cashController,
+                  onChanged: (_) => setState(() {}),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Cash paid',
+                    prefixIcon: Icon(Icons.payments_outlined),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                TextField(
+                  controller: _onlineController,
+                  onChanged: (_) => setState(() {}),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'UPI / online paid',
+                    prefixIcon: Icon(Icons.qr_code_scanner_outlined),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _onlineController,
-            onChanged: (_) => setState(() {}),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Online paid',
-              prefixIcon: Icon(Icons.qr_code_scanner_outlined),
+          const SizedBox(height: AppSpacing.md),
+          OperationalBanner(
+            title: _updatedOutstanding > 0
+                ? 'Settlement will leave pending balance'
+                : 'Settlement clears outstanding balance',
+            message: _updatedOutstanding > 0
+                ? '${formatCurrency(_updatedOutstanding)} remains payable after this entry.'
+                : 'This vendor will have no pending balance after saving.',
+            icon: _updatedOutstanding > 0
+                ? Icons.pending_actions_outlined
+                : Icons.verified_outlined,
+            tone: settlementTone,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppCard(
+            color: AppColors.surfaceLow,
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              children: [
+                OperationalDataRow(
+                  label: 'Total received',
+                  value: formatCurrency(_totalPaid),
+                  valueColor: _totalPaid > 0 ? AppColors.success : null,
+                ),
+                OperationalDataRow(
+                  label: 'Remaining credit',
+                  value: formatCurrency(_remainingCredit),
+                ),
+                OperationalDataRow(
+                  label: 'Outstanding after payment',
+                  value: formatCurrency(_updatedOutstanding),
+                  valueColor: _updatedOutstanding > 0
+                      ? AppColors.warning
+                      : AppColors.success,
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          Card(
-            color: const Color(0xFFF2F6EE),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _SettlementRow(
-                      label: 'Total received',
-                      value: formatCurrency(_totalPaid)),
-                  _SettlementRow(
-                      label: 'Remaining credit',
-                      value: formatCurrency(_remainingCredit)),
-                  _SettlementRow(
-                      label: 'Outstanding balance after payment',
-                      value: formatCurrency(_updatedOutstanding)),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          FilledButton(
+          const SizedBox(height: AppSpacing.lg),
+          FilledButton.icon(
             onPressed: _isSaving ? null : _submitSettlement,
-            child: Text(_isSaving ? 'Saving...' : 'Finish Settlement'),
+            icon: const Icon(Icons.check_circle_outline),
+            label: Text(_isSaving ? 'Saving...' : 'Finish Settlement'),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SettlementRow extends StatelessWidget {
-  const _SettlementRow({
-    required this.label,
-    required this.value,
-  });
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          Expanded(child: Text(label)),
-          Text(value, style: Theme.of(context).textTheme.titleMedium),
         ],
       ),
     );

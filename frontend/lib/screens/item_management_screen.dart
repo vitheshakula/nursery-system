@@ -8,6 +8,7 @@ import '../models/item.dart';
 import '../shared/theme/app_theme.dart';
 import '../shared/widgets/app_card.dart';
 import '../shared/widgets/empty_state_widget.dart';
+import '../shared/widgets/operational_widgets.dart';
 import '../utils/formatters.dart';
 import 'category_management_screen.dart';
 
@@ -160,7 +161,7 @@ class ItemManagementScreenState extends ConsumerState<ItemManagementScreen> {
                 hintText: 'Search items',
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.sm),
             SizedBox(
               height: 42,
               child: ListView(
@@ -171,12 +172,10 @@ class ItemManagementScreenState extends ConsumerState<ItemManagementScreen> {
                     child: ChoiceChip(
                       label: const Text('All'),
                       selected: _selectedCategoryId == 'all',
-                      selectedColor: AppColors.primary,
-                      backgroundColor: const Color(0xFFEDEFED),
                       labelStyle: TextStyle(
                         color: _selectedCategoryId == 'all'
-                            ? Colors.white
-                            : AppColors.text,
+                            ? AppColors.primary
+                            : AppColors.muted,
                         fontWeight: FontWeight.w800,
                       ),
                       onSelected: (_) {
@@ -192,12 +191,10 @@ class ItemManagementScreenState extends ConsumerState<ItemManagementScreen> {
                       child: ChoiceChip(
                         label: Text(category.name),
                         selected: _selectedCategoryId == category.id,
-                        selectedColor: AppColors.primary,
-                        backgroundColor: const Color(0xFFEDEFED),
                         labelStyle: TextStyle(
                           color: _selectedCategoryId == category.id
-                              ? Colors.white
-                              : AppColors.text,
+                              ? AppColors.primary
+                              : AppColors.muted,
                           fontWeight: FontWeight.w800,
                         ),
                         onSelected: (_) {
@@ -211,10 +208,10 @@ class ItemManagementScreenState extends ConsumerState<ItemManagementScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.sm),
             Expanded(
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const LoadingState(label: 'Loading inventory')
                   : _error != null
                       ? _StateMessage(message: _error!, onRetry: _loadData)
                       : filtered.isEmpty
@@ -230,69 +227,111 @@ class ItemManagementScreenState extends ConsumerState<ItemManagementScreen> {
                                   ? _showItemSheet
                                   : null,
                             )
-                          : ListView.separated(
-                              itemCount: filtered.length,
-                              separatorBuilder: (_, __) =>
-                                  const SizedBox(height: 12),
-                              itemBuilder: (context, index) {
-                                final item = filtered[index];
-                                final categoryName = _categories
-                                    .firstWhere(
-                                      (category) =>
-                                          category.id == item.categoryId,
-                                      orElse: () => const Category(
-                                          id: '', name: 'Others'),
-                                    )
-                                    .name;
+                          : AppCard(
+                              padding: EdgeInsets.zero,
+                              child: ListView.separated(
+                                itemCount: filtered.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final item = filtered[index];
+                                  final categoryName = _categories
+                                      .firstWhere(
+                                        (category) =>
+                                            category.id == item.categoryId,
+                                        orElse: () => const Category(
+                                            id: '', name: 'Others'),
+                                      )
+                                      .name;
+                                  final lowStock = item.currentStock <= 10;
 
-                                return AppCard(
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        width: 48,
-                                        height: 48,
-                                        decoration: BoxDecoration(
-                                          color: AppColors.primarySoft,
-                                          borderRadius:
-                                              BorderRadius.circular(12),
+                                  return Padding(
+                                    padding:
+                                        const EdgeInsets.all(AppSpacing.md),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 44,
+                                          height: 44,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.surfaceHigh,
+                                            borderRadius: BorderRadius.circular(
+                                                AppRadii.md),
+                                            border: Border.all(
+                                                color: AppColors.line),
+                                          ),
+                                          child: Icon(
+                                            lowStock
+                                                ? Icons.warning_amber_outlined
+                                                : Icons.inventory_2_outlined,
+                                            color: lowStock
+                                                ? AppColors.warning
+                                                : AppColors.primary,
+                                          ),
                                         ),
-                                        child: const Icon(
-                                          Icons.inventory_2_outlined,
-                                          color: AppColors.primary,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(item.name,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .titleMedium),
-                                            const SizedBox(height: 6),
-                                            Wrap(
-                                              spacing: 8,
-                                              runSpacing: 8,
-                                              children: [
-                                                _InfoPill(label: categoryName),
-                                                _InfoPill(
-                                                    label:
-                                                        'Vendor ${formatCurrency(item.vendorPrice)}'),
-                                                if (item.retailPrice != null)
+                                        const SizedBox(width: AppSpacing.sm),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      item.name,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: Theme.of(context)
+                                                          .textTheme
+                                                          .titleSmall,
+                                                    ),
+                                                  ),
+                                                  if (lowStock) ...[
+                                                    const SizedBox(
+                                                        width: AppSpacing.xs),
+                                                    const StatusChip(
+                                                      label: 'Low stock',
+                                                      tone:
+                                                          OperationalStatusTone
+                                                              .warning,
+                                                      icon: Icons
+                                                          .warning_amber_outlined,
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Wrap(
+                                                spacing: AppSpacing.xs,
+                                                runSpacing: AppSpacing.xs,
+                                                children: [
                                                   _InfoPill(
+                                                      label: categoryName),
+                                                  _InfoPill(
+                                                    label:
+                                                        'Stock ${item.currentStock}',
+                                                  ),
+                                                  _InfoPill(
+                                                    label:
+                                                        'Vendor ${formatCurrency(item.vendorPrice)}',
+                                                  ),
+                                                  if (item.retailPrice != null)
+                                                    _InfoPill(
                                                       label:
-                                                          'Retail ${formatCurrency(item.retailPrice!)}'),
-                                              ],
-                                            ),
-                                          ],
+                                                          'Retail ${formatCurrency(item.retailPrice!)}',
+                                                    ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
             ),
           ],
@@ -462,15 +501,16 @@ class _InfoPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.primarySoft,
+        color: AppColors.surfaceHigh,
+        border: Border.all(color: AppColors.line),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
         style: const TextStyle(
-          fontSize: 13,
+          fontSize: 12,
           fontWeight: FontWeight.w700,
-          color: AppColors.primaryDark,
+          color: AppColors.muted,
         ),
       ),
     );
@@ -489,18 +529,17 @@ class _StateMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(message, textAlign: TextAlign.center),
-          if (onRetry != null) ...[
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: onRetry,
-              child: const Text('Retry'),
-            ),
-          ],
-        ],
+      child: OperationalBanner(
+        title: 'Inventory unavailable',
+        message: message,
+        icon: Icons.error_outline,
+        tone: OperationalStatusTone.danger,
+        action: onRetry == null
+            ? null
+            : TextButton(
+                onPressed: onRetry,
+                child: const Text('Retry'),
+              ),
       ),
     );
   }

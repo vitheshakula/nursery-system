@@ -195,7 +195,7 @@ class _VendorDetailScreenState extends ConsumerState<VendorDetailScreen>
   Future<String?> _choosePaymentMethod() {
     return showModalBottomSheet<String>(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1014,7 +1014,7 @@ class _HistoryItem extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: const Color(0xFFFBFCFB),
+        color: AppColors.surfaceLow,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
@@ -1197,16 +1197,16 @@ class _InlineMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppCard(
       radius: 12,
-      color: const Color(0xFFFFFBF5),
+      color: AppColors.warning.withValues(alpha: 0.12),
       child: Row(
         children: [
-          const Icon(Icons.info_outline, color: Color(0xFF8A5B16)),
+          const Icon(Icons.info_outline, color: AppColors.warning),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFF61420F),
+                    color: AppColors.warning,
                   ),
             ),
           ),

@@ -7,15 +7,19 @@ class AppCard extends StatelessWidget {
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(16),
-    this.color = Colors.white,
+    this.color,
     this.radius = AppRadii.card,
+    this.borderColor,
+    this.elevated = false,
     this.onTap,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
-  final Color color;
+  final Color? color;
   final double radius;
+  final Color? borderColor;
+  final bool elevated;
   final VoidCallback? onTap;
 
   @override
@@ -25,16 +29,19 @@ class AppCard extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: borderRadius,
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x10000000),
-            blurRadius: 16,
-            offset: Offset(0, 8),
-          ),
-        ],
+        border: Border.all(color: borderColor ?? AppColors.line),
+        boxShadow: elevated
+            ? const [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 20,
+                  offset: Offset(0, 10),
+                ),
+              ]
+            : null,
       ),
       child: Material(
-        color: color,
+        color: color ?? AppColors.surface,
         borderRadius: borderRadius,
         clipBehavior: Clip.antiAlias,
         child: InkWell(
